@@ -135,6 +135,7 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/inventory">Inventory intelligence</Link></Button>
             <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/dashboard">Sign in</Link></Button>
             <Button asChild className="hidden sm:inline-flex"><Link href="/dashboard/onboarding">Get started</Link></Button>
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation menu" aria-expanded={mobileNav ? "true" : "false"}>
@@ -149,6 +150,8 @@ export default function Home() {
               { href: "#how-it-works", label: "How it Works" },
               { href: "#feedback", label: "Feedback" },
               { href: "#impact", label: "Impact" },
+              { href: "/inventory", label: "Inventory intelligence" },
+              { href: "/flight-intelligence", label: "Flight intelligence" },
               { href: "/dashboard", label: "Dashboard" },
               { href: "/dashboard/onboarding", label: "Get started" },
             ].map((l) => (
@@ -174,9 +177,10 @@ export default function Home() {
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
               Transform hotel room block management from spreadsheet chaos into an intelligent, automated workflow. Parse contracts with AI, allocate guests visually, and protect your revenue — all in one platform.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Button asChild size="lg"><Link href="/dashboard/onboarding">Start 60-second setup <ArrowRight /></Link></Button>
               <Button asChild size="lg" variant="secondary"><Link href="/dashboard"><BarChart3 /> View live demo</Link></Button>
+              <Button asChild size="lg" variant="outline"><Link href="/inventory">Inventory intelligence <ArrowRight /></Link></Button>
             </div>
             <div className="mt-10 flex items-center gap-4 border-t pt-6">
               <AvatarStack names={["Priya Sharma", "Arjun Mehta", "Neha Kapoor", "Ravi Kumar"]} max={4} size="size-8" />
@@ -412,7 +416,7 @@ export default function Home() {
               <span className="ill-chip">Free to start · No credit card</span>
               <h2 className="mt-4 text-4xl font-bold leading-[1.02] sm:text-5xl">Ready to transform your group bookings?</h2>
               <p className="mt-4 max-w-md text-[17px] leading-relaxed text-black/70">See how TBO Assemble replaces spreadsheets with an intelligent, AI-powered workflow. Try the live demo now.</p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Button asChild size="lg" className="bg-black text-white hover:bg-black/85"><Link href="/dashboard/onboarding">Create your first event <ArrowRight /></Link></Button>
                 <Button asChild size="lg" variant="ghost" className="bg-black/10 text-black hover:bg-black/15 hover:text-black"><Link href="/dashboard">Explore dashboard</Link></Button>
               </div>
@@ -441,7 +445,9 @@ export default function Home() {
             <h4 className="text-sm font-semibold">Product</h4>
             <ul className="mt-3 space-y-2 text-sm">
               {[
-                { href: "/dashboard", label: "Dashboard" },
+                { href: "/inventory", label: "Inventory intelligence" },
+              { href: "/flight-intelligence", label: "Flight intelligence" },
+              { href: "/dashboard", label: "Dashboard" },
                 { href: "/dashboard/onboarding", label: "Create event" },
                 { href: "/dashboard/analytics", label: "Analytics" },
                 { href: "/dashboard/calendar", label: "Calendar view" },

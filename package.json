@@ -48,7 +48,8 @@
     "tailwind-merge": "^3.4.0",
     "tesseract.js": "^7.0.0",
     "uuid": "^13.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xml-js": "^1.6.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

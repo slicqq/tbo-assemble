@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { csvTemplate, readInventoryCSV } from '../src/lib/inventory-csv';
+import {createPlan} from '../src/lib/procurement';
+const input=readInventoryCSV(csvTemplate);assert.equal(input.length,1);assert.equal(input[0].name,'Sample Goa hotel');
+assert.ok(createPlan(input,200000,.35)[0].spend<=200000);
+assert.throws(()=>readInventoryCSV(csvTemplate.replace('0.12','2')),/cancellations/);
+assert.throws(()=>readInventoryCSV(csvTemplate+'\n'+csvTemplate.split('\n')[1]),/unique/);
+assert.throws(()=>readInventoryCSV(csvTemplate.replace('Hotel','Airplane')),/kind/);
+assert.throws(()=>readInventoryCSV('name,kind\nfoo,Hotel'),/Missing/);
+assert.equal(readInventoryCSV(csvTemplate.replace('Sample Goa hotel','"Sample, Goa hotel"'))[0].name,'Sample, Goa hotel');
+console.log('Inventory CSV import checks passed');
+assert.equal(input[0].existingStock,10);assert.equal(input[0].recoveryPct,.2);assert.equal(input[0].quoteExpiry,'2026-12-20');
+assert.throws(()=>readInventoryCSV(csvTemplate.replace('2026-12-20','2026-02-30')),/quoteExpiry/);

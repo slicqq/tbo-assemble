@@ -2,9 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
+import { RootProviders } from "@/components/root-providers";
 import { ThemeScript } from "@/components/ui/theme-toggle";
-import { AuthProvider } from "@/lib/auth-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,11 +37,11 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL("https://tbo-assemble.vercel.app"),
   title: {
-    default: "TBO Assemble | The Operating System for Group Travel",
-    template: "%s | TBO Assemble",
+    default: "TBO | Inventory Intelligence",
+    template: "%s | TBO Inventory Intelligence",
   },
   description:
-    "AI-orchestrated Group Inventory Management Platform for MICE conferences, destination weddings & corporate retreats. Smart room-block allocation, real-time attrition tracking, and automated guest communication.",
+    "An illustrative travel inventory procurement, demand forecasting and budget allocation dashboard.",
   keywords: [
     "group travel",
     "MICE",
@@ -102,11 +101,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${iosevka.variable} antialiased`}
         suppressHydrationWarning
       >
-        <Toaster>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        </Toaster>
+        <RootProviders>{children}</RootProviders>
         <script
           dangerouslySetInnerHTML={{
             __html: `
