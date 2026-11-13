@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import {
-  ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowUpRight,
+  ArrowDownRight, ArrowLeftRight, ArrowUpRight,
   BarChart3, CalendarDays, CheckCircle2, ChevronDown, Clock3,
-  ExternalLink, Info, Plane, RefreshCw, Route as RouteIcon, ShieldCheck,
+  ExternalLink, Info, Plane, RefreshCw, ShieldCheck,
   Table2, Ticket, TrendingUp,
 } from 'lucide-react';
 import { ROUTES, shiftMonth, type MonthlyTraffic } from '@/lib/india-market';
+import { FeatureHeader, FeatureMetric, FeatureNotice } from '@/components/dashboard/feature-ui';
 
 type Traffic = {
   sourceRowCount: number;
@@ -60,37 +60,12 @@ export default function IndiaMarket() {
   const reverse = ROUTES.find(r => r.origin === route.destination && r.destination === route.origin);
 
   return <div className="mx-auto max-w-[1240px] pb-16">
-    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
-      <Link href="/dashboard" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><ArrowLeft className="size-3.5"/> Dashboard</Link>
-      <span aria-hidden="true" className="text-border">/</span><span className="text-foreground">India travel data</span>
-    </nav>
+    <FeatureHeader title="India travel data" description="Explore Indian route traffic and collected fare observations" status="Public market data" actions={<a href="/research/india-market-data.md" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent">Data guide <ArrowUpRight className="size-3.5"/></a>}/>
+    <FeatureNotice><strong className="text-foreground">Market data, not TBO transactions.</strong> Passenger traffic is industry-wide; cached fares are not guaranteed live prices or booking volumes.</FeatureNotice>
 
-    <header className="mt-7 flex flex-wrap items-end justify-between gap-5">
-      <div>
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.14em] text-brand"><span className="size-1.5 rounded-full bg-brand"/> Market intelligence</div>
-        <h1 className="font-display text-[30px] font-bold tracking-tight text-foreground sm:text-4xl">India travel data</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Explore route traffic and track fare observations from public travel sources.</p>
-      </div>
-      <a href="/research/india-market-data.md" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-card px-4 text-xs font-semibold transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">Data &amp; methodology <ArrowUpRight className="size-3.5"/></a>
-    </header>
-
-    <div className="mt-7 flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3.5 text-xs leading-relaxed text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-      <Info className="mt-0.5 size-4 shrink-0"/><p><strong>Market signals, not TBO transactions.</strong> Passenger traffic is industry-wide. Fares are cached search results, not guaranteed live prices or booking volumes.</p>
-    </div>
-
-    <section aria-labelledby="route-selector" className={`${panel} mt-5 overflow-hidden`}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 sm:px-6">
-        <div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-brand/10 text-brand"><RouteIcon className="size-4"/></span><div><h2 id="route-selector" className="text-sm font-bold">Select your route</h2><p className="mt-0.5 text-[11px] text-muted-foreground">Choose a direction to explore</p></div></div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border bg-surface/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground"><span className="size-1.5 rounded-full bg-emerald-500"/> {ROUTES.length} directions available</span>
-      </div>
-      <div className="flex flex-wrap items-end gap-3 p-5 sm:px-6">
-        <div className="min-w-[210px] flex-1">
-          <label htmlFor="india-route" className={tiny}>Route and direction</label>
-          <div className="relative mt-2"><select id="india-route" value={routeKey} onChange={e=>setRouteKey(e.target.value)} className="h-11 w-full appearance-none rounded-xl border border-input bg-background pl-3.5 pr-10 text-sm font-semibold text-foreground outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15">{ROUTES.map(r=><option key={`${r.origin}-${r.destination}`} value={`${r.origin}-${r.destination}`}>{r.from} ({r.origin}) → {r.to} ({r.destination})</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-3.5 size-4 text-muted-foreground"/></div>
-        </div>
-        <button type="button" disabled={!reverse} onClick={()=>reverse&&setRouteKey(`${reverse.origin}-${reverse.destination}`)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border bg-background px-4 text-xs font-semibold transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"><ArrowLeftRight className="size-4"/> Reverse</button>
-        <div className="ml-auto hidden items-center gap-3 rounded-xl bg-surface/70 px-4 py-2.5 text-xs font-semibold sm:flex"><span>{route.origin}</span><ArrowRight className="size-4 text-brand"/><span>{route.destination}</span></div>
-      </div>
+    <section aria-labelledby="route-selector" className="mt-5 flex flex-wrap items-end gap-3">
+      <div className="min-w-[220px] flex-1 sm:max-w-md"><label id="route-selector" htmlFor="india-route" className="text-sm font-medium text-muted-foreground">Route and direction</label><div className="relative mt-2"><select id="india-route" value={routeKey} onChange={e=>setRouteKey(e.target.value)} className="h-10 w-full appearance-none rounded-full border border-input bg-background pl-4 pr-10 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/30">{ROUTES.map(r=><option key={`${r.origin}-${r.destination}`} value={`${r.origin}-${r.destination}`}>{r.from} ({r.origin}) → {r.to} ({r.destination})</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-4 top-3 size-4 text-muted-foreground"/></div></div>
+      <button type="button" disabled={!reverse} onClick={()=>reverse&&setRouteKey(`${reverse.origin}-${reverse.destination}`)} className="inline-flex h-10 items-center justify-center gap-2 rounded-full border bg-background px-4 text-sm font-medium shadow-xs transition-colors hover:bg-accent disabled:opacity-50"><ArrowLeftRight className="size-4"/> Reverse</button>
     </section>
     <RouteData key={`${routeKey}-${revision}`} routeKey={routeKey} refresh={()=>setRevision(n=>n+1)}/>
   </div>;
@@ -128,12 +103,12 @@ function RouteData({routeKey,refresh}:{routeKey:string;refresh:()=>void}) {
   const lastDayFares=fares.status==='ready'&&lastDay?fares.data.filter(f=>f.collection_day===lastDay):[];
 
   return <>
-    <div className="mt-7 flex flex-wrap items-end justify-between gap-3"><div><p className={tiny}>At a glance</p><h2 className="font-display mt-1 text-xl font-bold tracking-tight">Route overview <span className="text-muted-foreground">/ {origin} → {destination}</span></h2></div><button type="button" onClick={refresh} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-brand"><RefreshCw className="size-3.5"/> Reload data</button></div>
+    <div className="mt-6 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">Route overview</h2><p className="mt-1 text-sm text-muted-foreground">{origin} → {destination} · Latest available observations</p></div><button type="button" onClick={refresh} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-brand"><RefreshCw className="size-3.5"/> Reload data</button></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Metric icon={<CalendarDays className="size-4"/>} label="Latest reported month" main={last?shortMonth(last.month):traffic.status==='loading'?'Loading…':'—'} detail="DGCA route traffic · delayed"/>
-      <Metric icon={<Plane className="size-4"/>} label="Passengers carried" main={last?.passengers!=null?value(last.passengers):traffic.status==='loading'?'Loading…':'—'} detail={last?.quality==='ambiguous'?'Conflicting source rows':last?'In the latest reported month':'No traffic data'}/>
+      <Metric icon={<Plane className="size-4"/>} label="Passengers carried" main={last?.passengers!=null?value(last.passengers):traffic.status==='loading'?'Loading…':'—'} detail={last?.quality==='ambiguous'?'Conflicting source rows':last?'In the latest reported month':traffic.status==='error'?'Traffic unavailable':traffic.status==='loading'?'Loading traffic':'No traffic data'}/>
       <Metric icon={<TrendingUp className="size-4"/>} label="Year-over-year" main={yoy===null?'—':`${yoy>0?'+':''}${yoy.toFixed(1)}%`} detail="Versus the same month last year" trend={yoy}/>
-      <Metric icon={<Clock3 className="size-4"/>} label="Last fare check" main={latestCheck?shortDate(latestCheck):fares.status==='loading'?'Loading…':'—'} detail={latestCheck?`${lastDayFares.filter(f=>f.status==='ok').length} of ${lastDayFares.length} checks found an offer`:'No recorded observations'}/>
+      <Metric icon={<Clock3 className="size-4"/>} label="Last fare check" main={latestCheck?shortDate(latestCheck):fares.status==='loading'?'Loading…':'—'} detail={latestCheck?`${lastDayFares.filter(f=>f.status==='ok').length} of ${lastDayFares.length} checks found an offer`:fares.status==='error'?'Fare data unavailable':fares.status==='loading'?'Loading fares':'No recorded observations'}/>
     </div>
 
     <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,1fr)]">
@@ -171,7 +146,7 @@ function RouteData({routeKey,refresh}:{routeKey:string;refresh:()=>void}) {
 }
 
 function Metric({icon,label,main,detail,trend}:{icon:React.ReactNode;label:string;main:string;detail:string;trend?:number|null}) {
- return <div className={`${panel} p-4 sm:p-5`}><div className="flex items-center justify-between gap-2"><p className={tiny}>{label}</p><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-muted-foreground">{icon}</span></div><div className="mt-3 flex items-center gap-1.5"><p className="font-display text-2xl font-bold tracking-tight tabular-nums">{main}</p>{trend!=null&&(trend>=0?<ArrowUpRight className="size-4 text-emerald-600"/>:<ArrowDownRight className="size-4 text-amber-600"/>)}</div><p className="mt-1.5 text-[11px] text-muted-foreground">{detail}</p></div>;
+ return <FeatureMetric icon={icon} label={label} value={<span className="flex items-center gap-1.5">{main}{trend!=null&&(trend>=0?<ArrowUpRight className="size-4 text-emerald-600"/>:<ArrowDownRight className="size-4 text-amber-600"/>)}</span>} caption={detail}/>;
 }
 function TrafficChart({rows}:{rows:Array<MonthlyTraffic|{month:string;passengers:null;quality:'missing'}>}) {
  const max=Math.max(1,...rows.map(r=>r.passengers??0));
