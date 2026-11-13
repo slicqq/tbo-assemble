@@ -762,7 +762,7 @@ table {
 .marquee-track { animation: marquee-x 40s linear infinite; }
 .marquee:hover .marquee-track { animation-play-state: paused; }
 
-/* Illustrations (CC0, display) ship on their own colour tile */
+/* Illustrations (CC0) ship on their own colour tile */
 @layer components {
   .ill-art {
     display: block;
