@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   Sparkles,
   LogOut,
-  ChevronRight,
   HelpCircle,
   Menu,
   X,
@@ -30,6 +29,7 @@ import {
   CalendarDays,
   BedDouble,
   Calculator,
+  Plane,
 } from "lucide-react";
 
 const navigation = [
@@ -37,6 +37,7 @@ const navigation = [
   { name: "Create Event", href: "/dashboard/onboarding", icon: Sparkles, description: "AI-powered setup", shortcut: "Alt+N" },
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
+  { name: "Flight Predictions", href: "/dashboard/flight-predictions", icon: Plane, description: "Flight demand and fare predictions" },
 ];
 
 const eventNavigation = [
