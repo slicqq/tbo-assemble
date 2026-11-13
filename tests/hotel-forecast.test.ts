@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { exampleHotelCSV, parseHotelHistoryCSV, forecastHotel } from '../src/lib/hotel-forecast';
+const asOf='2026-11-13',csv=exampleHotelCSV(asOf),rows=parseHotelHistoryCSV(csv);
+assert.equal(rows.length,28);
+const f=forecastHotel(rows,'Sample Goa Beach Hotel',asOf);
+assert.equal(f.historyRows,28);assert.ok(f.predictions.every(p=>p.netRoomNights!==null));assert.ok(f.metrics.every(m=>m.count>=5&&m.mae!==null));
+const extra=rows.concat([{...rows[27],date:'2026-11-13',bookedRoomNights:1000000},{...rows[27],date:'2026-11-14',bookedRoomNights:1000000}]);
+const noLookahead=forecastHotel(extra,'Sample Goa Beach Hotel',asOf);assert.deepEqual(noLookahead.predictions,f.predictions);assert.equal(noLookahead.ignoredRows,2);
+assert.equal(forecastHotel(rows.filter(r=>r.date!=='2026-11-12'),'Sample Goa Beach Hotel',asOf).predictions[0].netRoomNights,null);
+assert.throws(()=>parseHotelHistoryCSV(csv+'\n'+csv.split('\n')[1]),/duplicate/);
+assert.throws(()=>parseHotelHistoryCSV('date,hotel,bookedRoomNights,cancelledRoomNights,searches\n2026-11-12,Hotel,4,5,10'),/cancellations/);
+assert.throws(()=>parseHotelHistoryCSV('date,hotel,bookedRoomNights,cancelledRoomNights,searches\n2026-02-30,Hotel,4,0,10'),/date/);
+console.log('Hotel CSV, horizon-safe forecasting, validation and backtest tests passed');

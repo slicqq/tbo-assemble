@@ -39,6 +39,7 @@ const navigation = [
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
   { name: "Flight Predictions", href: "/dashboard/flight-predictions", icon: Plane, description: "Flight demand and fare predictions" },
+  { name: "Hotel Demand", href: "/dashboard/hotel-demand", icon: Hotel, description: "Historical hotel booking demand forecasts" },
   { name: "Cancellation & Risk", href: "/dashboard/cancellation-risk", icon: ShieldAlert, description: "Cancellation assumptions and unsold inventory risk" },
 ];
 
