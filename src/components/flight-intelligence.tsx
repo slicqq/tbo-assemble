@@ -7,6 +7,7 @@ import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Clo
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { FeatureHeader, FeatureNotice } from '@/components/dashboard/feature-ui';
+import { ActivityBars, VisualCard } from '@/components/dashboard/data-visuals';
 import { exampleHistory, forecastRoute, parseHistoryCSV, type DailyHistory } from '@/lib/flight-forecast';
 import type { OfferResult } from '@/lib/travelpayouts';
 
@@ -45,6 +46,7 @@ export default function FlightIntelligence({ embedded = false }: { embedded?: bo
     try { return forecastRoute(history, origin.toUpperCase(), destination.toUpperCase(), asOf); } catch { return null; }
   }, [history, origin, destination, asOf]);
   const loading = offersState === 'loading' || newsState === 'loading' || weatherState === 'loading';
+  const recentRoute = useMemo(() => history.filter(r => r.origin === origin.toUpperCase() && r.destination === destination.toUpperCase() && r.date < asOf).sort((a,b) => a.date.localeCompare(b.date)).slice(-14), [history, origin, destination, asOf]);
 
   function load() {
     setOffers(null); setNews(null); setWeather(null);
@@ -122,6 +124,16 @@ export default function FlightIntelligence({ embedded = false }: { embedded?: bo
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">7-day gross look-to-book: {analysis.lookToBook === null ? 'not available' : `${(analysis.lookToBook * 100).toFixed(2)}%`}. Baseline: 50% recent seven-day average + 50% same-weekday historical average, using completed days before the as-of date. Not a buying signal.</p>
           </>}
         </div>
+        {embedded && analysis && <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <VisualCard title="Booking activity" description="Completed booking days and baseline estimates · net bookings">
+            <ActivityBars unit="Net bookings" format={v=>v.toFixed(1)} points={[...recentRoute.map(r=>({date:r.date,value:r.bookings-r.cancellations,kind:'History' as const})),...analysis.predictions.map(p=>({date:p.date,value:p.bookings,kind:'Estimate' as const}))]}/>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Available days only; gaps are not filled. Estimates are not actual sales.</p>
+          </VisualCard>
+          <VisualCard title="Minimum fare history" description="Completed booking days and baseline estimates · INR">
+            <ActivityBars unit="Minimum fare" format={money} points={[...recentRoute.map(r=>({date:r.date,value:r.minFare,kind:'History' as const})),...analysis.predictions.map(p=>({date:p.date,value:p.minFare,kind:'Estimate' as const}))]}/>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Missing fares and unavailable estimates have no bar; estimates are not live or guaranteed prices.</p>
+          </VisualCard>
+        </div>}
       </section>
       <section className={embedded ? 'mt-6' : 'border-y bg-surface/60'}><div className={embedded ? '' : 'mx-auto max-w-6xl px-5 py-12 sm:px-6 sm:py-16'}>{!embedded && <p className={eyebrowStyle}>03 / THE BIGGER PICTURE</p>}<h2 className={embedded ? 'text-xl font-bold' : 'font-display mt-2 text-3xl font-bold sm:text-4xl'}>{embedded ? 'Route context' : 'Context for the journey.'}</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Current signals can help you investigate a route. They do not change the predictions above.</p>
         <div className="mt-7 grid gap-4 lg:grid-cols-2">

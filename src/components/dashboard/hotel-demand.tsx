@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowDownToLine, ArrowUpRight, CalendarDays, ChartNoAxesCombined, RotateCcw, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FeatureHeader, FeatureMetric, FeatureNotice } from '@/components/dashboard/feature-ui';
+import { ComparisonBars, VisualCard } from '@/components/dashboard/data-visuals';
 import { exampleHotelCSV, forecastHotel, parseHotelHistoryCSV, type HotelHistory } from '@/lib/hotel-forecast';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -43,6 +44,13 @@ export default function HotelDemand() {
    {history.length===0?<div className="mt-6 rounded-xl border border-dashed bg-surface/50 p-8 text-center text-sm text-muted-foreground">No completed history for this hotel before the selected as-of date.</div>:<div className="mt-6 overflow-x-auto"><div className="flex h-56 min-w-[580px] items-end gap-2 border-b pb-1" role="img" aria-label="Historical net room-nights and baseline estimates, by booking date">{chart.map((point,i)=><div key={`${point.date}-${point.kind}`} className="group flex h-full flex-1 flex-col justify-end"><div className="flex flex-1 items-end"><div title={`${point.kind} · ${point.date}: ${point.amount===null?'insufficient data':`${value(point.amount)} net room-nights`}`} className={`w-full rounded-t-md ${point.kind==='Forecast'?'bg-amber-400':'bg-foreground/80'}`} style={{height:point.amount===null?'0%':`${Math.max(point.amount>0?1:0,point.amount/max*90)}%`}}/></div><span className="mt-2 h-4 text-center text-[10px] text-muted-foreground">{i%2===0||point.kind==='Forecast'?fmtDate(point.date):''}</span></div>)}</div></div>}
    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Bars show only available dates; missing calendar days are not interpolated. Last included: {forecast.lastDate||'none'}. Forecast bars are estimates, not actual bookings.</p>
   </section>
+  <VisualCard className="mt-4" title="Recent booking mix" description="Last 14 available completed booking days · room-nights, not stay-date occupancy">
+    <ComparisonBars items={history.length ? [
+      {label:'Net room-nights booked',value:history.reduce((sum,r)=>sum+r.bookedRoomNights-r.cancelledRoomNights,0),text:value(history.reduce((sum,r)=>sum+r.bookedRoomNights-r.cancelledRoomNights,0)),tone:'blue'},
+      {label:'Cancelled room-nights',value:history.reduce((sum,r)=>sum+r.cancelledRoomNights,0),text:value(history.reduce((sum,r)=>sum+r.cancelledRoomNights,0)),tone:'amber'},
+    ] : []} empty="No completed booking days available for this selection."/>
+    <p className="mt-4 text-xs text-muted-foreground">Cancellations are from bookings made on the same day; missing days are not counted.</p>
+  </VisualCard>
   <section className="mt-6 rounded-2xl border bg-surface/50 p-5"><h2 className="font-display text-lg font-bold">How the baseline works</h2><p className="mt-3 text-sm leading-relaxed text-muted-foreground">Each estimate combines the average of the latest seven completed days (50%) with historical observations for the same weekday (50%). Rolling MAE compares predictions with past observations at each horizon without using future data. Searches are stored for context but are not used in the forecast.</p><p className="mt-3 text-sm leading-relaxed text-muted-foreground">Results are uncalibrated and need validation against real hotel data. They aggregate stay dates and cannot determine how many rooms to procure for a particular stay period.</p><Link href="/dashboard/cancellation-risk" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold underline underline-offset-4">Explore cancellation &amp; risk <ArrowUpRight className="size-4"/></Link></section>
  </div>;
 }
