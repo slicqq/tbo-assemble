@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { createRiskView } from '../src/lib/cancellation-risk';
+import { opportunities } from '../src/lib/procurement';
+const asOf = '2026-11-13';
+const baseline = createRiskView(opportunities, 5000000, .35, asOf, 0);
+const stressed = createRiskView(opportunities, 5000000, .35, asOf, .1);
+assert.ok(baseline.spend <= 5000000 && stressed.spend <= 5000000);
+assert.ok(stressed.modeledCancellations > baseline.modeledCancellations);
+assert.ok(stressed.rows.every(r => r.cancellations <= 1));
+assert.ok(baseline.expectedUnsold >= 0 && baseline.unsoldExposure >= 0);
+assert.ok(baseline.rows.every(r => r.expectedUnsold <= r.qty + 1e-9));
+const noBudget = createRiskView(opportunities, 0, .35, asOf, 0);
+assert.equal(noBudget.spend, 0); assert.equal(noBudget.unsoldExposure, 0); assert.equal(noBudget.expectedUnsold, 0);
+const capped = createRiskView(opportunities, 5000000, .35, asOf, 2);
+assert.ok(capped.rows.every(r => r.cancellations === 1));
+assert.ok(Number.isFinite(capped.modeledCancellations));
+console.log('Cancellation uplift, allocation and exposure invariants passed');

@@ -30,6 +30,7 @@ import {
   BedDouble,
   Calculator,
   Plane,
+  ShieldAlert,
 } from "lucide-react";
 
 const navigation = [
@@ -38,6 +39,7 @@ const navigation = [
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
   { name: "Flight Predictions", href: "/dashboard/flight-predictions", icon: Plane, description: "Flight demand and fare predictions" },
+  { name: "Cancellation & Risk", href: "/dashboard/cancellation-risk", icon: ShieldAlert, description: "Cancellation assumptions and unsold inventory risk" },
 ];
 
 const eventNavigation = [
