@@ -52,3 +52,7 @@ The optional `POST /api/procurement/plan` route accepts JSON `{items, budget, ri
 ## Flight demand and fare intelligence
 
 Open `/flight-intelligence`. It offers an optional Travelpayouts cached-fare comparison for two departure dates, Google News RSS destination headlines and Open-Meteo weather, a local historical CSV upload and a simple leakage-safe daily route-level booking and fare baseline with rolling MAE. News and provider offers are displayed as context, not used as features in the baseline. Booking-day forecasts aggregate the historical travel-date mix and are not predictions for a particular departure date. Travelpayouts cached-fare data needs an optional free-account token and is not a live bookable quote. Open-Meteo free access is non-commercial and provider terms apply. See [flight setup, CSV schema, and limitations](public/research/flight-setup.md).
+
+### Public-data Travel Prediction Lab
+
+`/dashboard/travel-prediction` replays hotel booking-day forecasts on a historical public dataset (119,390 Portuguese hotel booking records; arrivals 2015–2017). It is **not** trained on TBO data and does not forecast current travel demand. See [`public/research/public-travel-data.md`](public/research/public-travel-data.md) for attribution, checksum, selection bias, model and backtest limitations. Run `python scripts/prepare_public_hotel_data.py` to reproduce the aggregate and `npx tsx tests/public-travel-forecast.test.ts` for forecast tests.
