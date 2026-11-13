@@ -193,6 +193,14 @@ export default function Home() {
           <HeroVisual />
         </section>
 
+        {/* Flight intelligence uses the same design language as the original site. */}
+        <section className="mx-auto max-w-6xl px-6 pb-16" aria-label="Flight intelligence">
+          <div className="flex flex-col gap-5 rounded-[24px] border bg-surface/60 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+            <div><div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[.14em] text-muted-foreground"><Sparkles className="size-4" /> Flight intelligence · prototype</div><h2 className="font-display mt-2 text-2xl font-bold">A clearer view of what comes next.</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Explore flight demand and fare estimates from your own history, alongside route context.</p></div>
+            <Button asChild size="lg" className="shrink-0"><Link href="/flight-intelligence">Explore flight predictions <ArrowRight /></Link></Button>
+          </div>
+        </section>
+
         {/* ─── Destinations ───────────────────────────── */}
         <section aria-label="Destinations" className="border-y bg-surface/60 py-10">
           <p className="mb-6 text-center text-sm text-muted-foreground">Room blocks managed across India&apos;s favourite destinations</p>
