@@ -56,3 +56,7 @@ Open `/flight-intelligence`. It offers an optional Travelpayouts cached-fare com
 ### Public-data Travel Prediction Lab
 
 `/dashboard/travel-prediction` replays hotel booking-day forecasts on a historical public dataset (119,390 Portuguese hotel booking records; arrivals 2015–2017). It is **not** trained on TBO data and does not forecast current travel demand. See [`public/research/public-travel-data.md`](public/research/public-travel-data.md) for attribution, checksum, selection bias, model and backtest limitations. Run `python scripts/prepare_public_hotel_data.py` to reproduce the aggregate and `npx tsx tests/public-travel-forecast.test.ts` for forecast tests.
+
+### India travel data and fare collection
+
+`/dashboard/india-market` displays DGCA-derived route traffic and Travelpayouts cached fare observations. See [`public/research/india-market-data.md`](public/research/india-market-data.md) and [`docs/india-market-migration.sql`](docs/india-market-migration.sql) for source rights, limitations, setup and the daily scheduled collection job. These are industry data, not TBO bookings; prices are cached and historical. Confirm provider terms before long-term or commercial use.
