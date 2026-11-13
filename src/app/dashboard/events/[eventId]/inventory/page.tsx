@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
+import { InventoryOptimizer } from "@/components/dashboard/inventory-optimizer";
 import { Hotel, ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export default async function InventoryPage({
     include: {
       roomBlocks: true,
       addOns: true,
+      guests: { select: { id: true } },
     },
   });
 
@@ -29,6 +31,16 @@ export default async function InventoryPage({
   const bookedRooms = event.roomBlocks.reduce((s, r) => s + r.bookedQty, 0);
   const totalValue = event.roomBlocks.reduce((s, r) => s + r.rate * r.totalQty, 0);
   const bookedValue = event.roomBlocks.reduce((s, r) => s + r.rate * r.bookedQty, 0);
+  const initialDemand = Math.max(
+    bookedRooms,
+    event.expectedPax ? Math.ceil(event.expectedPax / 2.2) : 0,
+    Math.ceil(event.guests.length / 2.2),
+    1,
+  );
+  const defaultBudget = Math.max(
+    100000,
+    event.roomBlocks.reduce((sum, room) => sum + room.rate * Math.max(1, Math.ceil(room.totalQty * 0.1)), 0),
+  );
 
   return (
     <div>
@@ -73,6 +85,20 @@ export default async function InventoryPage({
           </CardContent>
         </Card>
       </div>
+
+      <InventoryOptimizer
+        eventName={event.name}
+        initialDemand={initialDemand}
+        defaultBudget={defaultBudget}
+        options={event.roomBlocks.map((room) => ({
+          id: room.id,
+          roomType: room.roomType,
+          supplier: room.hotelName || "Unspecified supplier",
+          buyRate: room.rate,
+          currentBlock: room.totalQty,
+          booked: room.bookedQty,
+        }))}
+      />
 
       {/* Room Blocks */}
       <div className="grid gap-4">
