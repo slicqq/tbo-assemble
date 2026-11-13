@@ -16,8 +16,13 @@ export async function GET() {
     });
     return NextResponse.json(events);
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
+    console.error("GET /api/events database failure:", error);
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    const safeDiagnostic = diagnostic.replace(/(postgres(?:ql)?:\/\/[^:\s]+:)[^@\s]+@/gi, "$1[redacted]@");
+    return NextResponse.json(
+      { error: "Failed to fetch events", diagnostic: safeDiagnostic },
+      { status: 500 },
+    );
   }
 }
 
