@@ -1,0 +1,434 @@
+"use client";
+
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { GripVertical, User, MapPin, ArrowRight, Users, Save, X, Sparkles, Loader2, Download } from "lucide-react";
+
+interface Guest {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  group: string | null;
+  status: string;
+  proximityRequest: string | null;
+  allocatedFloor: string | null;
+  allocatedWing: string | null;
+  allocatedRoom: string | null;
+}
+
+interface RoomBlock {
+  id: string;
+  roomType: string;
+  floor: string | null;
+  wing: string | null;
+  totalQty: number;
+  bookedQty: number;
+}
+
+interface AllocatorClientProps {
+  guests: Guest[];
+  roomBlocks: RoomBlock[];
+  eventId: string;
+}
+
+interface FloorWing {
+  floor: string;
+  wing: string;
+  rooms: RoomBlock[];
+  guests: Guest[];
+  capacity: number;
+}
+
+export default function AllocatorClient({ guests, roomBlocks, eventId }: AllocatorClientProps) {
+  const [toast, setToast] = useState("");
+
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(""), 2500);
+  };
+
+  const [allocations, setAllocations] = useState<Record<string, { floor: string; wing: string }>>(() => {
+    const init: Record<string, { floor: string; wing: string }> = {};
+    for (const g of guests) {
+      if (g.allocatedFloor && g.allocatedWing) {
+        init[g.id] = { floor: g.allocatedFloor, wing: g.allocatedWing };
+      }
+    }
+    return init;
+  });
+
+  const [draggedGuest, setDraggedGuest] = useState<string | null>(null);
+  const [selectedGuest, setSelectedGuest] = useState<string | null>(null); // Mobile touch selection
+  const [saving, setSaving] = useState(false);
+  const [autoAllocating, setAutoAllocating] = useState(false);
+  const [allocationExplanations, setAllocationExplanations] = useState<Record<string, string>>({});
+
+  const handleExportRoomingList = () => {
+    const headers = ["Guest Name", "Email", "Phone", "Group", "Room Type", "Floor", "Wing", "Room Number", "Status"];
+    const rows = guests.map((g) => {
+      const alloc = allocations[g.id];
+      const floor = alloc?.floor || g.allocatedFloor || "";
+      const wing = alloc?.wing || g.allocatedWing || "";
+      // Find matching room type from floor/wing
+      const matchingRoom = roomBlocks.find(
+        (r) => (r.floor || "1") === floor && (r.wing || "Main") === wing
+      );
+      return [
+        g.name,
+        g.email || "",
+        g.phone || "",
+        g.group || "",
+        matchingRoom?.roomType || "",
+        floor,
+        wing,
+        g.allocatedRoom || "",
+        g.status,
+      ];
+    });
+    const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rooming-list-${eventId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Rooming list exported");
+  };
+
+  // Build floor/wing map
+  const floorWingMap = new Map<string, FloorWing>();
+  for (const room of roomBlocks) {
+    const floor = room.floor || "1";
+    const wing = room.wing || "Main";
+    const key = `${floor}-${wing}`;
+    if (!floorWingMap.has(key)) {
+      floorWingMap.set(key, { floor, wing, rooms: [], guests: [], capacity: 0 });
+    }
+    const fw = floorWingMap.get(key)!;
+    fw.rooms.push(room);
+    fw.capacity += room.totalQty;
+  }
+
+  // Assign guests to their allocated floor/wing
+  for (const guest of guests) {
+    const alloc = allocations[guest.id];
+    if (alloc) {
+      const key = `${alloc.floor}-${alloc.wing}`;
+      const fw = floorWingMap.get(key);
+      if (fw) fw.guests.push(guest);
+    }
+  }
+
+  const unallocatedGuests = guests.filter((g) => !allocations[g.id]);
+  const floorWings = Array.from(floorWingMap.values()).sort((a, b) => a.floor.localeCompare(b.floor));
+
+  const handleDragStart = (guestId: string) => {
+    setDraggedGuest(guestId);
+  };
+
+  // Mobile tap to select guest
+  const handleGuestSelect = (guestId: string) => {
+    setSelectedGuest((prev) => (prev === guestId ? null : guestId));
+  };
+
+  const handleDrop = (floor: string, wing: string) => {
+    // Desktop drag-drop
+    if (draggedGuest) {
+      setAllocations((prev) => ({
+        ...prev,
+        [draggedGuest]: { floor, wing },
+      }));
+      setDraggedGuest(null);
+    }
+    // Mobile tap-to-allocate
+    if (selectedGuest && !allocations[selectedGuest]) {
+      setAllocations((prev) => ({
+        ...prev,
+        [selectedGuest]: { floor, wing },
+      }));
+      setSelectedGuest(null);
+      showToast("Guest allocated");
+    }
+  };
+
+  const handleRemoveAllocation = (guestId: string) => {
+    setAllocations((prev) => {
+      const next = { ...prev };
+      delete next[guestId];
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/allocate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allocations }),
+      });
+      if (res.ok) {
+        showToast("Allocations saved successfully");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setSaving(false);
+  };
+
+  const handleAutoAllocate = async () => {
+    setAutoAllocating(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/auto-allocate`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.allocations) {
+        setAllocations(data.allocations);
+        if (data.explanations) {
+          setAllocationExplanations(data.explanations);
+        }
+        showToast(`AI allocated ${data.allocated || 0} guests`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setAutoAllocating(false);
+  };
+
+  const GROUP_COLOR_PALETTES = [
+    "text-pink-800 dark:text-pink-300 bg-muted/40",
+    "text-blue-800 dark:text-blue-300 bg-muted/40",
+    "text-amber-800 dark:text-amber-300 bg-muted/40",
+    "text-purple-800 dark:text-purple-300 bg-muted/40",
+    "text-emerald-800 dark:text-emerald-300 bg-muted/40",
+    "text-cyan-800 dark:text-cyan-300 bg-muted/40",
+  ];
+
+  function getGroupColor(group: string): string {
+    let hash = 0;
+    for (let i = 0; i < group.length; i++) hash = group.charCodeAt(i) + ((hash << 5) - hash);
+    return GROUP_COLOR_PALETTES[Math.abs(hash) % GROUP_COLOR_PALETTES.length];
+  }
+
+  const getGroupStyle = (group: string | null) =>
+    group ? getGroupColor(group) : "text-gray-800 dark:text-zinc-300 border-border bg-muted/40";
+
+  return (
+    <div className="animate-fade-in">
+      {/* Action Buttons */}
+      <div className="flex flex-wrap justify-end mb-6 gap-2 sm:gap-3">
+        <Button
+          onClick={handleExportRoomingList}
+          variant="outline"
+          className="gap-2"
+        >
+          <Download className="h-4 w-4" />
+          Export Rooming List
+        </Button>
+        <Button
+          onClick={handleAutoAllocate}
+          disabled={autoAllocating || unallocatedGuests.length === 0}
+          variant="outline"
+          className="gap-2 border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-400 dark:hover:bg-purple-950/30"
+        >
+          {autoAllocating ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4" />
+          )}
+          {autoAllocating ? "AI Allocating..." : "AI Auto-Allocate"}
+        </Button>
+        <Button onClick={handleSave} disabled={saving} className="gap-2">
+          <Save className="h-4 w-4" />
+          {saving ? "Saving..." : "Save Allocations"}
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Unallocated Guests Panel */}
+        <div className="col-span-1">
+          <Card className="sticky top-4">
+            <CardHeader className="border-b border-border pb-3 bg-muted/40">
+              <CardTitle className="text-sm font-semibold dark:text-zinc-100">
+                Unallocated Guests ({unallocatedGuests.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 space-y-2 max-h-[40vh] sm:max-h-[600px] overflow-y-auto">
+              {selectedGuest && (
+                <div className="p-2 mb-2 bg-[#ea580c]/10 border border-[#ea580c]/30 rounded-lg text-xs text-[#ea580c] dark:text-orange-400 lg:hidden">
+                  <span className="font-medium">Tap a floor/wing below to allocate the selected guest</span>
+                </div>
+              )}
+              {unallocatedGuests.map((guest) => (
+                <div
+                  key={guest.id}
+                  draggable
+                  role="listitem"
+                  tabIndex={0}
+                  aria-selected={selectedGuest === guest.id}
+                  onDragStart={() => handleDragStart(guest.id)}
+                  onClick={() => handleGuestSelect(guest.id)}
+                  onKeyDown={(e) => e.key === "Enter" && handleGuestSelect(guest.id)}
+                  className={`p-2.5 rounded-xl border cursor-grab active:cursor-grabbing transition-all hover:shadow-md hover:scale-[1.02] touch-manipulation ${getGroupStyle(guest.group)} ${selectedGuest === guest.id ? "ring-2 ring-[#ea580c] ring-offset-1 dark:ring-offset-zinc-900 scale-[1.02]" : ""}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="h-3 w-3 opacity-40 hidden sm:block" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold truncate">{guest.name}</p>
+                      <p className="text-[10px] opacity-60">{guest.group || "No group"}</p>
+                    </div>
+                    {selectedGuest === guest.id && (
+                      <span className="text-[10px] font-medium text-[#ea580c] dark:text-orange-400 lg:hidden">Selected</span>
+                    )}
+                  </div>
+                  {guest.proximityRequest && (
+                    <p className="text-[10px] mt-1.5 flex items-center gap-1 opacity-70 bg-card rounded px-1.5 py-0.5">
+                      <MapPin className="h-2.5 w-2.5" /> Near: {guest.proximityRequest}
+                    </p>
+                  )}
+                </div>
+              ))}
+              {unallocatedGuests.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full mx-auto mb-2 border bg-background text-foreground">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">All guests allocated!</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Floor Plan */}
+        <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {floorWings.map((fw) => (
+            <Card
+              key={`${fw.floor}-${fw.wing}`}
+              className={`border-0 shadow-sm transition-all cursor-pointer ${
+                draggedGuest || selectedGuest ? "ring-2 ring-[#ea580c] ring-offset-2 dark:ring-offset-zinc-900 bg-orange-50/30 dark:bg-orange-950/20" : ""
+              }`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => handleDrop(fw.floor, fw.wing)}
+              onClick={() => handleDrop(fw.floor, fw.wing)}
+              role="button"
+              tabIndex={0}
+              aria-label={`Allocate to Floor ${fw.floor}, ${fw.wing} Wing`}
+              onKeyDown={(e) => e.key === "Enter" && handleDrop(fw.floor, fw.wing)}
+            >
+              <CardHeader className="border-b border-border pb-3 bg-muted/40">
+                <CardTitle className="text-sm font-semibold dark:text-zinc-100 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold border bg-background text-foreground">
+                      {fw.floor}
+                    </span>
+                    {fw.wing} Wing
+                  </span>
+                  <Badge variant={fw.guests.length >= fw.capacity ? "success" : "secondary"}>
+                    {fw.guests.length}/{fw.capacity}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3">
+                <div className="min-h-[100px] space-y-2">
+                  {fw.guests.map((guest) => (
+                    <div
+                      key={guest.id}
+                      className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${getGroupStyle(guest.group)}`}
+                      title={allocationExplanations[guest.id] || ""}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <User className="h-3 w-3 flex-shrink-0" />
+                          <span className="font-semibold truncate">{guest.name}</span>
+                          {guest.group && (
+                            <span className="opacity-50 text-[10px]">({guest.group})</span>
+                          )}
+                        </div>
+                        {allocationExplanations[guest.id] && (
+                          <p className="text-[9px] mt-1 opacity-60 flex items-center gap-1 pl-5">
+                            <Sparkles className="h-2.5 w-2.5 flex-shrink-0" />
+                            {allocationExplanations[guest.id]}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleRemoveAllocation(guest.id)}
+                        title="Remove allocation"
+                        aria-label={`Remove allocation for ${guest.name}`}
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {fw.guests.length === 0 && (
+                    <div className="flex items-center justify-center h-24 text-xs text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/40">
+                      <span>Drop guests here</span>
+                    </div>
+                  )}
+                </div>
+                {/* Room types */}
+                <div className="mt-3 pt-3 border-t border-border">
+                  {fw.rooms.map((room) => (
+                    <p key={room.id} className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-gray-300 dark:bg-zinc-600"></span>
+                      {room.roomType} × {room.totalQty}
+                    </p>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Proximity Requests */}
+      {guests.some((g) => g.proximityRequest) && (
+        <Card className="mt-6 overflow-hidden">
+          <CardHeader className="border-b bg-muted/40">
+            <CardTitle className="text-sm flex items-center gap-2 font-semibold">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-foreground">
+                <MapPin className="h-3.5 w-3.5" />
+              </div>
+              Proximity Requests
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="space-y-2">
+              {guests
+                .filter((g) => g.proximityRequest)
+                .map((guest) => (
+                  <div
+                    key={guest.id}
+                    className="flex items-center gap-3 text-sm p-3 rounded-xl border bg-muted/40"
+                  >
+                    <span className="font-semibold text-purple-900 dark:text-purple-300">{guest.name}</span>
+                    <ArrowRight className="h-3 w-3 text-purple-400" />
+                    <span className="text-purple-700 dark:text-purple-400">Near: {guest.proximityRequest}</span>
+                    {allocations[guest.id] && (
+                      <Badge variant="success" className="ml-auto">
+                        Floor {allocations[guest.id].floor} • {allocations[guest.id].wing}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 px-4 py-2 bg-green-600 text-white text-sm rounded-lg shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Agent {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  company   String?
+  events    Event[]
+  createdAt DateTime @default(now())
+}
+
+model Event {
+  id              String          @id @default(uuid())
+  name            String
+  slug            String          @unique
+  type            String
+  venue           String
+  location        String
+  checkIn         DateTime
+  checkOut        DateTime
+  description     String?
+  primaryColor    String          @default("#1e40af")
+  secondaryColor  String          @default("#f0f9ff")
+  accentColor     String          @default("#3b82f6")
+  heroImageUrl    String?
+  expectedPax     Int?            // Expected number of attendees (can change dynamically)
+  agentId         String
+  agent           Agent           @relation(fields: [agentId], references: [id])
+  roomBlocks      RoomBlock[]
+  guests          Guest[]
+  addOns          AddOn[]
+  attritionRules  AttritionRule[]
+  bookings        Booking[]
+  waitlists       Waitlist[]
+  activityLogs    ActivityLog[]
+  feedbacks       Feedback[]
+  discountRules   DiscountRule[]
+  rfps            RFP[]
+  scheduleItems   ScheduleItem[]
+  status          String          @default("draft")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt
+}
+
+model RoomBlock {
+  id          String    @id @default(uuid())
+  roomType    String
+  description String?
+  rate        Float
+  totalQty    Int
+  bookedQty   Int       @default(0)
+  floor       String?
+  wing        String?
+  hotelName   String?
+  eventId     String
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+  waitlists   Waitlist[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([eventId])
+}
+
+model Guest {
+  id               String    @id @default(uuid())
+  name             String
+  email            String?
+  phone            String?
+  group            String?
+  status           String    @default("invited")
+  proximityRequest String?
+  notes            String?
+  allocatedFloor   String?
+  allocatedWing    String?
+  allocatedRoom    String?
+  eventId          String
+  event            Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  bookings         Booking[]
+  nudges           Nudge[]
+  occupants        RoomOccupant[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  @@index([eventId])
+  @@index([email])
+  @@index([status])
+}
+
+model AddOn {
+  id            String         @id @default(uuid())
+  name          String
+  description   String?
+  price         Float
+  isIncluded    Boolean        @default(false)
+  eventId       String
+  event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  bookingAddOns BookingAddOn[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+
+  @@index([eventId])
+}
+
+model Booking {
+  id          String         @id @default(uuid())
+  guestId     String
+  guest       Guest          @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  eventId     String
+  event       Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roomBlockId String
+  roomBlock   RoomBlock      @relation(fields: [roomBlockId], references: [id])
+  totalAmount Float
+  status      String         @default("confirmed")
+  addOns      BookingAddOn[]
+  occupants   RoomOccupant[] // Additional guests in this room
+  checkedIn   Boolean        @default(false)
+  checkedInAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @default(now()) @updatedAt
+
+  @@index([eventId])
+  @@index([guestId])
+  @@index([status])
+}
+
+model BookingAddOn {
+  id        String  @id @default(uuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addOnId   String
+  addOn     AddOn   @relation(fields: [addOnId], references: [id])
+  price     Float
+  quantity  Int     @default(1)
+
+  @@index([bookingId])
+}
+
+model AttritionRule {
+  id             String   @id @default(uuid())
+  eventId        String
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  releaseDate    DateTime
+  releasePercent Int
+  description    String?
+  isTriggered    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+model Nudge {
+  id      String   @id @default(uuid())
+  guestId String
+  guest   Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  channel String   @default("whatsapp")
+  message String
+  sentAt  DateTime @default(now())
+  status  String   @default("sent")
+}
+
+model Waitlist {
+  id          String    @id @default(uuid())
+  guestName   String
+  guestEmail  String?
+  guestPhone  String?
+  roomBlockId String
+  roomBlock   RoomBlock @relation(fields: [roomBlockId], references: [id])
+  eventId     String
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status      String    @default("waiting")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([eventId])
+  @@index([status])
+  @@index([roomBlockId])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  action    String
+  details   String
+  actor     String   @default("system")
+  createdAt DateTime @default(now())
+
+  @@index([eventId])
+}
+
+model Feedback {
+  id          String   @id @default(uuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  guestName   String
+  guestEmail  String?
+  rating      Int
+  stayRating  Int?
+  eventRating Int?
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  @@index([eventId])
+}
+
+model DiscountRule {
+  id          String   @id @default(uuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  minRooms    Int
+  discountPct Int
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([eventId])
+}
+
+// RFP (Request for Proposal) for comparing quotes from multiple vendors/hotels
+model Vendor {
+  id          String   @id @default(uuid())
+  name        String
+  email       String?
+  phone       String?
+  contactPerson String?
+  address     String?
+  notes       String?
+  rfps        RFP[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model RFP {
+  id              String    @id @default(uuid())
+  eventId         String
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  vendorId        String
+  vendor          Vendor    @relation(fields: [vendorId], references: [id])
+  quotedAmount    Float
+  roomRate        Float?
+  foodRate        Float?
+  venueRate       Float?
+  additionalCosts Float?
+  validUntil      DateTime?
+  status          String    @default("pending") // pending, accepted, rejected, negotiating
+  notes           String?
+  attachmentUrl   String?
+  responseDate    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+
+  @@index([eventId])
+  @@index([vendorId])
+}
+
+// Event Schedule / Agenda for MICE events
+model ScheduleItem {
+  id          String   @id @default(uuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  date        DateTime
+  startTime   String   // HH:mm format
+  endTime     String   // HH:mm format
+  venue       String?  // Specific venue/room for this item
+  type        String   @default("session") // session, meal, break, networking, entertainment, transport
+  cost        Float?   // Cost associated with this schedule item
+  paxCount    Int?     // Expected attendees for this item
+  notes       String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([eventId])
+  @@index([date])
+}
+
+// Room Occupants - Track multiple guests per room
+model RoomOccupant {
+  id          String   @id @default(uuid())
+  bookingId   String
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  guestId     String
+  guest       Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  isPrimary   Boolean  @default(false) // Primary guest who made the booking
+  createdAt   DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([guestId])
+}

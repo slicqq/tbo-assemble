@@ -1,0 +1,683 @@
+"use client";
+
+import { useState, useRef } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  UserPlus,
+  Upload,
+  Download,
+  X,
+  Search,
+  Filter,
+  Loader2,
+  Check,
+  Trash2,
+  Pencil,
+  Save,
+  AlertCircle,
+} from "lucide-react";
+import { Illustration } from "@/components/ui/illustration";
+
+interface Guest {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  group: string | null;
+  status: string;
+  proximityRequest: string | null;
+  notes: string | null;
+  allocatedFloor: string | null;
+  allocatedRoom: string | null;
+  bookings: {
+    roomBlock: { roomType: string } | null;
+  }[];
+}
+
+interface GuestManagementProps {
+  eventId: string;
+  initialGuests: Guest[];
+  eventName: string;
+}
+
+export function GuestManagement({ eventId, initialGuests }: GuestManagementProps) {
+  const [guests, setGuests] = useState<Guest[]>(initialGuests);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(false);
+  const [importResult, setImportResult] = useState<{ 
+    imported?: number; 
+    failed?: number;
+    errors?: { name: string; error: string }[];
+  } | null>(null);
+  const [toast, setToast] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [editData, setEditData] = useState({ name: "", email: "", phone: "", group: "", proximityRequest: "", notes: "" });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(""), 2500);
+  };
+
+  // Form states
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    group: "",
+    proximityRequest: "",
+    notes: "",
+  });
+
+  const handleAddGuest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim()) return;
+
+    setLoading(true);
+    setValidationErrors([]);
+    try {
+      const res = await fetch("/api/guests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, ...formData }),
+      });
+
+      if (res.ok) {
+        const newGuest = await res.json();
+        setGuests([{ ...newGuest, bookings: [] }, ...guests]);
+        setFormData({ name: "", email: "", phone: "", group: "", proximityRequest: "", notes: "" });
+        setShowAddForm(false);
+        showToast("Guest added successfully");
+      } else {
+        const err = await res.json();
+        if (err.error) {
+          setValidationErrors([err.error]);
+        }
+      }
+    } catch (error) {
+      console.error("Error adding guest:", error);
+      setValidationErrors(["Failed to add guest. Please try again."]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteGuest = async (guestId: string) => {
+    if (!confirm("Are you sure you want to delete this guest?")) return;
+
+    try {
+      const res = await fetch(`/api/guests?id=${guestId}`, { method: "DELETE" });
+      if (res.ok) {
+        setGuests(guests.filter((g) => g.id !== guestId));
+        showToast("Guest deleted successfully");
+      }
+    } catch (error) {
+      console.error("Error deleting guest:", error);
+    }
+  };
+
+  const startEditing = (guest: Guest) => {
+    setEditingId(guest.id);
+    setEditData({
+      name: guest.name,
+      email: guest.email || "",
+      phone: guest.phone || "",
+      group: guest.group || "",
+      proximityRequest: guest.proximityRequest || "",
+      notes: guest.notes || "",
+    });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditData({ name: "", email: "", phone: "", group: "", proximityRequest: "", notes: "" });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId || !editData.name.trim()) return;
+    setLoading(true);
+    setValidationErrors([]);
+    try {
+      const res = await fetch("/api/guests", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingId, ...editData }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setGuests(guests.map((g) =>
+          g.id === editingId ? { ...g, ...updated } : g
+        ));
+        showToast("Guest updated successfully");
+        cancelEditing();
+      } else {
+        const err = await res.json();
+        if (err.error) {
+          setValidationErrors([err.error]);
+          showToast(err.error);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating guest:", error);
+      setValidationErrors(["Failed to update guest"]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setImportResult(null);
+    setValidationErrors([]);
+
+    try {
+      const text = await file.text();
+      const lines = text.split("\n").filter((l) => l.trim());
+      if (lines.length < 2) {
+        setValidationErrors(["CSV file must have at least a header row and one data row"]);
+        return;
+      }
+
+      const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+      const guestsData = lines.slice(1).map((line) => {
+        const values = line.match(/("([^"]*)"|[^,]*)/g)?.map((v) => v.trim().replace(/^"|"$/g, "")) || [];
+        const guest: Record<string, string> = {};
+        headers.forEach((h, i) => {
+          guest[h] = values[i] || "";
+        });
+        return guest;
+      });
+
+      const res = await fetch("/api/guests/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, guests: guestsData }),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setImportResult({ 
+          imported: result.imported, 
+          failed: result.failed,
+          errors: result.errors 
+        });
+        
+        if (result.imported > 0) {
+          showToast(`Successfully imported ${result.imported} guest(s)`);
+        }
+
+        // Refresh guest list
+        const refreshRes = await fetch(`/api/guests?eventId=${eventId}`);
+        if (refreshRes.ok) {
+          const refreshedGuests = await refreshRes.json();
+          setGuests(refreshedGuests);
+        }
+      } else {
+        const err = await res.json();
+        setValidationErrors([err.error || "Import failed"]);
+      }
+    } catch (error) {
+      console.error("Error importing CSV:", error);
+      setValidationErrors(["Failed to import CSV. Please check the file format."]);
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      const res = await fetch(`/api/guests/import?eventId=${eventId}`);
+      if (!res.ok) throw new Error("Export failed");
+      const csvContent = await res.text();
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `guests-${eventId}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error exporting CSV:", error);
+    }
+  };
+
+  // Filter guests
+  const filteredGuests = guests.filter((g) => {
+    const matchesSearch =
+      !searchTerm ||
+      g.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      g.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      g.group?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === "all" || g.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  // Group guests
+  const groups = new Map<string, Guest[]>();
+  for (const guest of filteredGuests) {
+    const group = guest.group || "Unassigned";
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group)!.push(guest);
+  }
+
+  const statusVariant = (status: string) => {
+    switch (status) {
+      case "confirmed":
+        return "success" as const;
+      case "invited":
+        return "warning" as const;
+      case "cancelled":
+        return "destructive" as const;
+      default:
+        return "secondary" as const;
+    }
+  };
+
+  const confirmed = guests.filter((g) => g.status === "confirmed").length;
+  const invited = guests.filter((g) => g.status === "invited").length;
+  const cancelled = guests.filter((g) => g.status === "cancelled").length;
+
+  return (
+    <div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        <Card className="">
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Total Guests</p>
+            <p className="text-2xl font-bold mt-1">{guests.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="">
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Confirmed</p>
+            <p className="text-2xl font-bold mt-1 text-green-600">{confirmed}</p>
+          </CardContent>
+        </Card>
+        <Card className="">
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Invited</p>
+            <p className="text-2xl font-bold mt-1 text-amber-600">{invited}</p>
+          </CardContent>
+        </Card>
+        <Card className="">
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Cancelled</p>
+            <p className="text-2xl font-bold mt-1 text-red-600">{cancelled}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Actions Bar */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="w-full sm:flex-1 sm:min-w-[200px] relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search guests..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            title="Filter by status"
+            aria-label="Filter guests by status"
+            className="text-sm border border-border dark:border-zinc-600 rounded-lg px-3 py-2 bg-card dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring"
+          >
+            <option value="all">All Status</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="invited">Invited</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAddForm(true)}
+            className="gap-1.5"
+          >
+            <UserPlus className="h-4 w-4" /> Add Guest
+          </Button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleImportCSV}
+            className="hidden"
+            title="Import CSV file"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading}
+            className="gap-1.5"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            Import CSV
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            className="gap-1.5"
+          >
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </div>
+      </div>
+
+      {/* Import Result */}
+      {importResult && (
+        <div className="mb-6 space-y-3">
+          <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl flex items-center gap-3">
+            <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <p className="text-sm text-emerald-800 dark:text-emerald-300">
+              Successfully imported <strong>{importResult.imported}</strong> guests.
+              {importResult.failed ? ` ${importResult.failed} rows failed.` : ""}
+            </p>
+            <button
+              onClick={() => setImportResult(null)}
+              className="ml-auto text-emerald-600 hover:text-emerald-800"
+              title="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          
+          {/* Detailed import errors */}
+          {importResult.errors && importResult.errors.length > 0 && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                The following guests had validation issues:
+              </p>
+              <ul className="text-sm text-amber-700 dark:text-amber-400 space-y-1 max-h-32 overflow-y-auto">
+                {importResult.errors.map((err, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="text-amber-500">•</span>
+                    <span><strong>{err.name}</strong>: {err.error}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Validation Errors */}
+      {validationErrors.length > 0 && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-xl">
+          <div className="flex items-start gap-3">
+            <X className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-1">Validation Error</p>
+              <ul className="text-sm text-red-700 dark:text-red-400 space-y-1">
+                {validationErrors.map((error, i) => (
+                  <li key={i}>{error}</li>
+                ))}
+              </ul>
+            </div>
+            <button
+              onClick={() => setValidationErrors([])}
+              className="text-red-500 hover:text-red-700"
+              title="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Guest Form */}
+      {showAddForm && (
+        <Card className="mb-6 border-0 shadow-lg">
+          <CardHeader className="pb-4 border-b border-border">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-semibold">Add New Guest</CardTitle>
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="text-muted-foreground hover:text-gray-600 dark:hover:text-zinc-300"
+                title="Close form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form onSubmit={handleAddGuest} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">
+                    Name <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    placeholder="Guest name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Email</label>
+                  <Input
+                    type="email"
+                    placeholder="guest@email.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Phone</label>
+                  <Input
+                    placeholder="+1 234 567 8900"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Group</label>
+                  <Input
+                    placeholder="e.g., Bride's Family, VIP"
+                    value={formData.group}
+                    onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">
+                    Proximity Request
+                  </label>
+                  <Input
+                    placeholder="e.g., Near elevator, Same floor as..."
+                    value={formData.proximityRequest}
+                    onChange={(e) => setFormData({ ...formData, proximityRequest: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Notes</label>
+                  <Input
+                    placeholder="Special requirements"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={loading || !formData.name.trim()}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Add Guest
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Guest List */}
+      {filteredGuests.length === 0 ? (
+        <Card className="">
+          <CardContent className="py-12 text-center">
+            <Illustration name="followers" className="mx-auto mb-4 w-20 rounded-lg" />
+            <h3 className="text-lg font-medium text-foreground mb-1">
+              {guests.length === 0 ? "No guests yet" : "No guests match your filters"}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {guests.length === 0
+                ? "Add guests manually or import from CSV."
+                : "Try adjusting your search or filter criteria."}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        Array.from(groups.entries()).map(([groupName, groupGuests]) => (
+          <Card key={groupName} className="mb-4">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                {groupName}
+                <Badge variant="secondary">{groupGuests.length}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="border rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[600px]">
+                  <thead className="bg-gray-50 dark:bg-zinc-800">
+                    <tr>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Name</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Contact</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Room</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Proximity</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                      <th className="text-right p-3 font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupGuests.map((guest) => (
+                      <tr key={guest.id} className="border-t hover:bg-muted/40 transition-colors">
+                        {editingId === guest.id ? (
+                          <>
+                            <td className="p-2">
+                              <Input
+                                value={editData.name}
+                                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                                className="h-8 text-sm"
+                                placeholder="Name"
+                              />
+                            </td>
+                            <td className="p-2">
+                              <Input
+                                value={editData.email}
+                                onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                                className="h-8 text-sm"
+                                placeholder="Email"
+                              />
+                            </td>
+                            <td className="p-3 text-muted-foreground">
+                              {guest.bookings[0]?.roomBlock?.roomType || (
+                                <span className="text-muted-foreground">Not booked</span>
+                              )}
+                            </td>
+                            <td className="p-2">
+                              <Input
+                                value={editData.proximityRequest}
+                                onChange={(e) => setEditData({ ...editData, proximityRequest: e.target.value })}
+                                className="h-8 text-sm"
+                                placeholder="Proximity"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <Badge variant={statusVariant(guest.status)}>{guest.status}</Badge>
+                            </td>
+                            <td className="p-3 text-right flex items-center justify-end gap-1">
+                              <button
+                                onClick={handleSaveEdit}
+                                disabled={loading}
+                                className="text-green-600 hover:text-green-700 transition-colors p-1"
+                                title="Save changes"
+                              >
+                                <Save className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                className="text-muted-foreground hover:text-gray-600 transition-colors p-1"
+                                title="Cancel editing"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="p-3 font-medium">{guest.name}</td>
+                            <td className="p-3 text-muted-foreground">
+                              {guest.email || guest.phone || "-"}
+                            </td>
+                            <td className="p-3 text-muted-foreground">
+                              {guest.bookings[0]?.roomBlock?.roomType || (
+                                <span className="text-muted-foreground">Not booked</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-muted-foreground">{guest.proximityRequest || "-"}</td>
+                            <td className="p-3">
+                              <Badge variant={statusVariant(guest.status)}>{guest.status}</Badge>
+                            </td>
+                            <td className="p-3 text-right flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => startEditing(guest)}
+                                className="text-muted-foreground hover:text-blue-600 transition-colors p-1"
+                                title="Edit guest"
+                                aria-label={`Edit guest ${guest.name}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteGuest(guest.id)}
+                                className="text-muted-foreground hover:text-red-600 transition-colors p-1"
+                                title="Delete guest"
+                                aria-label={`Delete guest ${guest.name}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 px-4 py-2 bg-green-600 text-white text-sm rounded-lg shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
