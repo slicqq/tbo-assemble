@@ -1,38 +1,188 @@
 'use client';
-import {useEffect,useState} from 'react';
-import Link from 'next/link';
-import {ArrowLeft,ArrowUpRight,Database,Info,RefreshCw} from 'lucide-react';
-import {ROUTES,MonthlyTraffic} from '@/lib/india-market';
 
-type Traffic={sourceRowCount:number;monthly:MonthlyTraffic[];reference:{target:string;estimate:number|null;mae:number|null;holdoutCount:number;holdout:string}|null};
-type Fare={collection_day:string;departure_date:string;observed_at:string;status:'ok'|'empty'|'error';price_inr:number|null;airline:string|null;provider_found_at:string|null;error:string|null};
-const card='rounded-2xl border bg-card p-5 sm:p-6';const label='text-[11px] font-semibold uppercase tracking-[.12em] text-muted-foreground';
-const num=(v:number)=>new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(v);
-export default function IndiaMarket(){
- const [routeKey,setRouteKey]=useState('DEL-PNQ');const [traffic,setTraffic]=useState<Traffic|null>(null);const [fares,setFares]=useState<Fare[]|null>(null);const [trafficError,setTrafficError]=useState('');const [fareError,setFareError]=useState('');const [loading,setLoading]=useState(true);
- useEffect(()=>{const controller=new AbortController(),[origin,destination]=routeKey.split('-');
-  const query=`origin=${origin}&destination=${destination}`;
-  Promise.allSettled([fetch(`/api/india-market/traffic?${query}`,{signal:controller.signal}).then(async r=>{const data=await r.json();if(!r.ok)throw Error(data.error);setTraffic(data)}).catch(e=>{if(!controller.signal.aborted)setTrafficError(e.message||'Could not load traffic.')}),fetch(`/api/india-market/fares?${query}`,{signal:controller.signal}).then(async r=>{const data=await r.json();if(!r.ok)throw Error(data.error);setFares(data.rows)}).catch(e=>{if(!controller.signal.aborted)setFareError(e.message||'Could not load fare observations.')})]).finally(()=>{if(!controller.signal.aborted)setLoading(false)});
-  return ()=>controller.abort();
- },[routeKey]);
- const recent=traffic?.monthly.slice(-12)??[];const max=Math.max(1,...recent.map(r=>r.passengers??0));const latest=traffic?.monthly.at(-1);const reference=traffic?.reference;
- return <div className="mx-auto max-w-6xl pb-12">
-  <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4"/> Back to Dashboard</Link>
-  <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground"><Database className="size-4"/> Public market data</div><h1 className="font-display mt-2 text-3xl font-bold sm:text-4xl">India travel data</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">Indian aviation traffic and collected fare observations, together in one place.</p></div><span className="rounded-full border bg-surface px-3 py-1.5 text-xs font-semibold">Research prototype</span></div>
-  <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"><Info className="mt-0.5 size-4 shrink-0"/><p><strong>Market data, not TBO transactions.</strong> Government figures count passengers carried, not TBO bookings. Fares are cached search results, not guaranteed offers. The fare collector starts accumulating observations only after its first successful run.</p></div>
-  <section className={`${card} mt-6`}><div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end"><label className={label} htmlFor="india-route">Direction<select id="india-route" value={routeKey} onChange={e=>{setTraffic(null);setFares(null);setTrafficError('');setFareError('');setLoading(true);setRouteKey(e.target.value)}} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground">{ROUTES.map(r=><option key={`${r.origin}-${r.destination}`} value={`${r.origin}-${r.destination}`}>{r.from} ({r.origin}) → {r.to} ({r.destination})</option>)}</select></label><p className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw className="size-4"/> Traffic source refreshes on request, up to 12-hour cache</p></div></section>
-  <section className={`${card} mt-4`}><div className="flex flex-wrap justify-between gap-2"><div><h2 className="font-display text-xl font-bold">Indian route traffic</h2><p className="mt-1 text-sm text-muted-foreground">Monthly passengers carried in the selected direction · DGCA via Vonter</p></div><span className="h-fit rounded-full border px-3 py-1 text-xs">Historical · updated with a lag</span></div>
-   {loading&&!traffic&&!trafficError?<p className="mt-5 text-sm text-muted-foreground">Loading traffic…</p>:trafficError?<p className="mt-5 text-sm text-destructive">{trafficError}</p>:traffic&&<><div className="mt-5 grid gap-3 sm:grid-cols-3"><Metric title="Source records" value={num(traffic.sourceRowCount)} detail="All city pairs, not individual bookings"/><Metric title="Latest route month" value={latest?.month??'—'} detail={latest?.passengers==null?'Not available or ambiguous':`${num(latest.passengers)} passengers carried`}/><Metric title="Next reported month reference" value={reference?.estimate==null?'Not available':num(reference.estimate)} detail={reference?`${reference.target} · same month last year`:'Not enough data'}/></div>
-    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">The reference is a simple seasonal baseline for the month after the latest published route observation—not a TBO forecast. That month may already be in the past because reporting is delayed. Latest-value revisions and historic publication dates were not reconstructed.</p>
-    <div className="mt-5 overflow-x-auto"><div className="flex h-44 min-w-[500px] items-end gap-2 border-b pb-1" role="img" aria-label="Monthly passenger traffic for the latest twelve recorded months">{recent.map(r=><div key={r.month} className="flex h-full flex-1 flex-col justify-end"><div className="flex flex-1 items-end"><div title={`${r.month}: ${r.passengers===null?r.quality:num(r.passengers)+' passengers'}`} className={`w-full rounded-t-md ${r.passengers===null?'bg-amber-400/50':'bg-foreground/80'}`} style={{height:r.passengers===null?'2%':`${Math.max(r.passengers>0?1:0,r.passengers/max*90)}%`}}/></div><span className="mt-2 h-4 text-center text-[10px] text-muted-foreground">{r.month.slice(5)}</span></div>)}</div></div><p className="mt-3 text-xs text-muted-foreground">Dark = reported passengers · yellow = conflicting or invalid source rows; missing months are not zero-filled.</p>
-    <p className="mt-3 text-sm text-muted-foreground">2025 historical test of the same-month-last-year baseline: {reference?.mae==null?'not enough comparable data':`MAE ${num(reference.mae)} passengers across ${reference.holdoutCount} months`}. This is a retrospective test on today’s source snapshot, not a real-time accuracy guarantee.</p>
-    <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground"><th className="pb-3 font-medium">Recent month</th><th className="pb-3 font-medium">Passengers</th><th className="pb-3 font-medium">Data status</th></tr></thead><tbody>{[...recent].reverse().slice(0,6).map(r=><tr key={r.month} className="border-b last:border-0"><td className="py-3">{r.month}</td><td>{r.passengers===null?'—':num(r.passengers)}</td><td className="text-muted-foreground">{r.quality==='ok'?'Reported':r.quality==='ambiguous'?'Ambiguous rows':'Invalid'}</td></tr>)}</tbody></table></div></>}
-  </section>
-  <section className={`${card} mt-4`}><div className="flex flex-wrap justify-between gap-2"><div><h2 className="font-display text-xl font-bold">Collected fare observations</h2><p className="mt-1 text-sm text-muted-foreground">Daily checks at 1, 7 and 30 days ahead · one-way, INR · cached Aviasales results</p></div><span className="h-fit rounded-full border px-3 py-1 text-xs">Not live booking prices</span></div>
-   {loading&&!fares&&!fareError?<p className="mt-5 text-sm text-muted-foreground">Loading fare history…</p>:fareError?<p className="mt-5 text-sm text-destructive">{fareError}</p>:!fares?.length?<p className="mt-5 rounded-xl border bg-surface/50 p-4 text-sm text-muted-foreground">No observations recorded for this route yet. A scheduled run, an unavailable provider, or an empty provider cache may explain this.</p>:<div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground"><th className="pb-3 font-medium">Checked UTC</th><th className="pb-3 font-medium">Departure</th><th className="pb-3 font-medium">Observed fare</th><th className="pb-3 font-medium">Airline</th><th className="pb-3 font-medium">Result</th></tr></thead><tbody>{fares.slice(0,15).map(f=><tr key={`${f.collection_day}-${f.departure_date}`} className="border-b last:border-0"><td className="py-3">{new Date(f.observed_at).toISOString().slice(0,16).replace('T',' ')}</td><td>{f.departure_date}</td><td>{f.price_inr==null?'—':`₹${num(f.price_inr)}`}</td><td>{f.airline??'—'}</td><td className="text-muted-foreground">{f.status==='ok'?'Cached offer':f.status==='empty'?'No cached offer':'Provider error'}</td></tr>)}</tbody></table></div>}
-   <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Observations are historical snapshots for research, not prices available now. Empty results and errors are not zero fares or proof that a flight was sold out. Provider found time may predate collection. Review Travelpayouts agreement for historical storage and commercial use.</p>
-  </section>
-  <section className="mt-6 rounded-2xl border bg-surface/50 p-5"><h2 className="font-display text-lg font-bold">Sources &amp; limitations</h2><p className="mt-3 text-sm leading-relaxed text-muted-foreground">Traffic is sourced from DGCA, via the Vonter India Aviation Traffic database (ODbL 1.0). Values represent passengers carried, not searches or bookings. Duplicate/reversed rows in a month are flagged as ambiguous, not summed. Passenger data can be revised and published after the month ends. The fare collector records small, fixed route/date checks; it cannot measure demand or TBO inventory.</p><div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold"><a href="/research/india-market-data.md" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">Data &amp; collector guide <ArrowUpRight className="size-4"/></a><a href="https://github.com/Vonter/india-aviation-traffic" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">Source database <ArrowUpRight className="size-4"/></a></div></section>
- </div>;
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import {
+  ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowUpRight,
+  BarChart3, CalendarDays, CheckCircle2, ChevronDown, Clock3,
+  ExternalLink, Info, Plane, RefreshCw, Route as RouteIcon, ShieldCheck,
+  Table2, Ticket, TrendingUp,
+} from 'lucide-react';
+import { ROUTES, shiftMonth, type MonthlyTraffic } from '@/lib/india-market';
+
+type Traffic = {
+  sourceRowCount: number;
+  monthly: MonthlyTraffic[];
+  retrievedAt: string;
+  reference: { target: string; estimate: number | null; mae: number | null; holdoutCount: number; holdout: string } | null;
+};
+type Fare = {
+  collection_day: string;
+  departure_date: string;
+  observed_at: string;
+  status: 'ok' | 'empty' | 'error';
+  price_inr: number | null;
+  airline: string | null;
+  stops: number | null;
+  provider_found_at: string | null;
+};
+type Load<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T };
+type FareFilter = 'all' | 'ok' | 'empty' | 'error';
+const panel = 'rounded-2xl border border-border bg-card';
+const tiny = 'text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground';
+const value = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
+const shortMonth = (month: string) => {
+  const [year, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, m - 1, 1)).toLocaleDateString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+};
+const shortDate = (date: string) => new Date(`${date.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const utcTime = (date: string) => {
+  const d = new Date(date);
+  return Number.isFinite(d.getTime()) ? `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC` : 'Unknown';
+};
+function calendarMonths(rows: MonthlyTraffic[], count: number): Array<MonthlyTraffic | { month: string; passengers: null; quality: 'missing' }> {
+  if (!rows.length) return [];
+  const last = rows[rows.length - 1].month;
+  const lookup = new Map(rows.map(row => [row.month, row]));
+  return Array.from({ length: count }, (_, i) => {
+    const month = shiftMonth(last, i - count + 1);
+    return lookup.get(month) ?? { month, passengers: null, quality: 'missing' as const };
+  });
 }
-function Metric({title,value,detail}:{title:string;value:string;detail:string}){return <div className="rounded-2xl border bg-surface/60 p-4"><p className={label}>{title}</p><p className="font-display mt-3 text-xl font-bold">{value}</p><p className="mt-2 text-xs text-muted-foreground">{detail}</p></div>}
+function leadDays(fare: Fare) {
+  return Math.round((Date.parse(`${fare.departure_date}T00:00:00Z`) - Date.parse(`${fare.collection_day}T00:00:00Z`)) / 86400000);
+}
+
+export default function IndiaMarket() {
+  const [routeKey, setRouteKey] = useState('DEL-PNQ');
+  const [revision, setRevision] = useState(0);
+  const route = ROUTES.find(r => `${r.origin}-${r.destination}` === routeKey)!;
+  const reverse = ROUTES.find(r => r.origin === route.destination && r.destination === route.origin);
+
+  return <div className="mx-auto max-w-[1240px] pb-16">
+    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><ArrowLeft className="size-3.5"/> Dashboard</Link>
+      <span aria-hidden="true" className="text-border">/</span><span className="text-foreground">India travel data</span>
+    </nav>
+
+    <header className="mt-7 flex flex-wrap items-end justify-between gap-5">
+      <div>
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.14em] text-brand"><span className="size-1.5 rounded-full bg-brand"/> Market intelligence</div>
+        <h1 className="font-display text-[30px] font-bold tracking-tight text-foreground sm:text-4xl">India travel data</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Explore route traffic and track fare observations from public travel sources.</p>
+      </div>
+      <a href="/research/india-market-data.md" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-card px-4 text-xs font-semibold transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">Data &amp; methodology <ArrowUpRight className="size-3.5"/></a>
+    </header>
+
+    <div className="mt-7 flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3.5 text-xs leading-relaxed text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+      <Info className="mt-0.5 size-4 shrink-0"/><p><strong>Market signals, not TBO transactions.</strong> Passenger traffic is industry-wide. Fares are cached search results, not guaranteed live prices or booking volumes.</p>
+    </div>
+
+    <section aria-labelledby="route-selector" className={`${panel} mt-5 overflow-hidden`}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 sm:px-6">
+        <div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-brand/10 text-brand"><RouteIcon className="size-4"/></span><div><h2 id="route-selector" className="text-sm font-bold">Select your route</h2><p className="mt-0.5 text-[11px] text-muted-foreground">Choose a direction to explore</p></div></div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border bg-surface/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground"><span className="size-1.5 rounded-full bg-emerald-500"/> {ROUTES.length} directions available</span>
+      </div>
+      <div className="flex flex-wrap items-end gap-3 p-5 sm:px-6">
+        <div className="min-w-[210px] flex-1">
+          <label htmlFor="india-route" className={tiny}>Route and direction</label>
+          <div className="relative mt-2"><select id="india-route" value={routeKey} onChange={e=>setRouteKey(e.target.value)} className="h-11 w-full appearance-none rounded-xl border border-input bg-background pl-3.5 pr-10 text-sm font-semibold text-foreground outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15">{ROUTES.map(r=><option key={`${r.origin}-${r.destination}`} value={`${r.origin}-${r.destination}`}>{r.from} ({r.origin}) → {r.to} ({r.destination})</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-3.5 size-4 text-muted-foreground"/></div>
+        </div>
+        <button type="button" disabled={!reverse} onClick={()=>reverse&&setRouteKey(`${reverse.origin}-${reverse.destination}`)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border bg-background px-4 text-xs font-semibold transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"><ArrowLeftRight className="size-4"/> Reverse</button>
+        <div className="ml-auto hidden items-center gap-3 rounded-xl bg-surface/70 px-4 py-2.5 text-xs font-semibold sm:flex"><span>{route.origin}</span><ArrowRight className="size-4 text-brand"/><span>{route.destination}</span></div>
+      </div>
+    </section>
+    <RouteData key={`${routeKey}-${revision}`} routeKey={routeKey} refresh={()=>setRevision(n=>n+1)}/>
+  </div>;
+}
+
+function RouteData({routeKey,refresh}:{routeKey:string;refresh:()=>void}) {
+  const [traffic, setTraffic] = useState<Load<Traffic>>({status:'loading'});
+  const [fares, setFares] = useState<Load<Fare[]>>({status:'loading'});
+  const [view, setView] = useState<'chart'|'table'>('chart');
+  const [range, setRange] = useState<6|12>(12);
+  const [filter, setFilter] = useState<FareFilter>('all');
+  const [showAll, setShowAll] = useState(false);
+  const [origin,destination] = routeKey.split('-');
+
+  useEffect(()=>{
+    const controller = new AbortController();
+    const query = `origin=${origin}&destination=${destination}`;
+    fetch(`/api/india-market/traffic?${query}`, {signal:controller.signal})
+      .then(async response=>{const json=await response.json();if(!response.ok)throw new Error(json.error||'Could not load traffic.');return json as Traffic;})
+      .then(data=>setTraffic({status:'ready',data}))
+      .catch(error=>{if(!controller.signal.aborted)setTraffic({status:'error',message:error.message||'Could not load traffic.'});});
+    fetch(`/api/india-market/fares?${query}`, {signal:controller.signal})
+      .then(async response=>{const json=await response.json();if(!response.ok)throw new Error(json.error||'Could not load fares.');return json.rows as Fare[];})
+      .then(data=>setFares({status:'ready',data}))
+      .catch(error=>{if(!controller.signal.aborted)setFares({status:'error',message:error.message||'Could not load fares.'});});
+    return ()=>controller.abort();
+  },[origin,destination]);
+
+  const data=traffic.status==='ready'?traffic.data:null;
+  const last=data?.monthly.at(-1);
+  const previousYear=last?data?.monthly.find(row=>row.month===shiftMonth(last.month,-12)):undefined;
+  const yoy=last?.passengers!=null&&previousYear?.passengers!=null&&previousYear.passengers>0?(last.passengers-previousYear.passengers)/previousYear.passengers*100:null;
+  const latestCheck=fares.status==='ready'&&fares.data.length?fares.data[0].observed_at:null;
+  const lastDay=fares.status==='ready'&&fares.data.length?fares.data[0].collection_day:null;
+  const lastDayFares=fares.status==='ready'&&lastDay?fares.data.filter(f=>f.collection_day===lastDay):[];
+
+  return <>
+    <div className="mt-7 flex flex-wrap items-end justify-between gap-3"><div><p className={tiny}>At a glance</p><h2 className="font-display mt-1 text-xl font-bold tracking-tight">Route overview <span className="text-muted-foreground">/ {origin} → {destination}</span></h2></div><button type="button" onClick={refresh} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-brand"><RefreshCw className="size-3.5"/> Reload data</button></div>
+    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <Metric icon={<CalendarDays className="size-4"/>} label="Latest reported month" main={last?shortMonth(last.month):traffic.status==='loading'?'Loading…':'—'} detail="DGCA route traffic · delayed"/>
+      <Metric icon={<Plane className="size-4"/>} label="Passengers carried" main={last?.passengers!=null?value(last.passengers):traffic.status==='loading'?'Loading…':'—'} detail={last?.quality==='ambiguous'?'Conflicting source rows':last?'In the latest reported month':'No traffic data'}/>
+      <Metric icon={<TrendingUp className="size-4"/>} label="Year-over-year" main={yoy===null?'—':`${yoy>0?'+':''}${yoy.toFixed(1)}%`} detail="Versus the same month last year" trend={yoy}/>
+      <Metric icon={<Clock3 className="size-4"/>} label="Last fare check" main={latestCheck?shortDate(latestCheck):fares.status==='loading'?'Loading…':'—'} detail={latestCheck?`${lastDayFares.filter(f=>f.status==='ok').length} of ${lastDayFares.length} checks found an offer`:'No recorded observations'}/>
+    </div>
+
+    <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,1fr)]">
+      <section className={`${panel} min-w-0 overflow-hidden`} aria-labelledby="traffic-heading">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b px-5 py-5 sm:px-6"><div><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-surface text-foreground"><BarChart3 className="size-4"/></span><h2 id="traffic-heading" className="font-display text-lg font-bold">Passenger traffic</h2></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Monthly passengers carried · {origin} → {destination}</p></div><span className="rounded-full border bg-surface/60 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">Historical data</span></div>
+        {traffic.status==='loading'?<Loading text="Loading route traffic"/>:traffic.status==='error'?<Problem message={traffic.message} onRetry={refresh}/>:<>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 sm:px-6"><div><p className={tiny}>Latest reported</p><div className="mt-1 flex flex-wrap items-baseline gap-2"><span className="font-display text-3xl font-bold tracking-tight tabular-nums">{last?.passengers==null?'—':value(last.passengers)}</span><span className="text-xs text-muted-foreground">passengers · {last?shortMonth(last.month):'—'}</span></div></div><div className="flex flex-wrap items-center gap-2"><div className="flex rounded-lg border bg-surface/50 p-0.5" aria-label="Traffic time range">{([6,12] as const).map(n=><button key={n} onClick={()=>setRange(n)} aria-pressed={range===n} className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold ${range===n?'bg-card text-foreground shadow-sm':'text-muted-foreground hover:text-foreground'}`}>{n}M</button>)}</div><div className="flex rounded-lg border bg-surface/50 p-0.5" aria-label="Traffic display mode"><button aria-label="Chart view" aria-pressed={view==='chart'} onClick={()=>setView('chart')} className={`rounded-md p-1.5 ${view==='chart'?'bg-card text-foreground shadow-sm':'text-muted-foreground'}`}><BarChart3 className="size-4"/></button><button aria-label="Table view" aria-pressed={view==='table'} onClick={()=>setView('table')} className={`rounded-md p-1.5 ${view==='table'?'bg-card text-foreground shadow-sm':'text-muted-foreground'}`}><Table2 className="size-4"/></button></div></div></div>
+          {view==='chart'?<TrafficChart rows={calendarMonths(traffic.data.monthly,range)}/>:<TrafficTable rows={calendarMonths(traffic.data.monthly,range)}/>}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-5 py-3 text-[11px] text-muted-foreground sm:px-6"><span>Source: DGCA via Vonter · {value(traffic.data.sourceRowCount)} records across all routes</span><span>Source retrieved: {utcTime(traffic.data.retrievedAt)}</span></div>
+        </>}
+      </section>
+      <section className={`${panel} flex flex-col overflow-hidden`} aria-labelledby="baseline-heading">
+        <div className="border-b px-5 py-5 sm:px-6"><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-brand/10 text-brand"><TrendingUp className="size-4"/></span><h2 id="baseline-heading" className="font-display text-lg font-bold">Seasonal reference</h2></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">A simple benchmark, not a TBO forecast</p></div>
+        {traffic.status==='loading'?<Loading text="Calculating reference"/>:traffic.status==='error'?<Problem message="Reference unavailable while traffic data is offline."/>:<div className="flex flex-1 flex-col p-5 sm:p-6">
+          <div className="rounded-xl border border-brand/15 bg-brand/[0.04] p-4"><div className="flex items-center justify-between gap-2"><p className={tiny}>Next reported month</p><span className="rounded-md bg-card px-2 py-1 text-[10px] font-semibold text-muted-foreground">{traffic.data.reference?.target?shortMonth(traffic.data.reference.target):'—'}</span></div><p className="font-display mt-4 text-3xl font-bold tracking-tight tabular-nums">{traffic.data.reference?.estimate==null?'—':value(traffic.data.reference.estimate)}</p><p className="mt-1 text-xs text-muted-foreground">Reference passengers</p></div>
+          <div className="mt-5 flex items-center justify-between gap-3 border-b pb-4"><div><p className="text-xs font-semibold">How it works</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Uses the same month in the previous year.</p></div><span className="rounded-lg bg-surface p-2 text-muted-foreground"><CalendarDays className="size-4"/></span></div>
+          <div className="mt-4"><p className="text-xs font-semibold">Historical test · 2025</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{traffic.data.reference?.mae==null?'Not enough comparable months.':`Average absolute error: ${value(traffic.data.reference.mae)} passengers across ${traffic.data.reference.holdoutCount} months.`}</p></div>
+          <p className="mt-auto pt-5 text-[11px] leading-relaxed text-muted-foreground">Reporting is delayed, so the next reported month may already have passed. Past errors are not a guarantee of accuracy.</p>
+        </div>}
+      </section>
+    </div>
+
+    <section className={`${panel} mt-4 overflow-hidden`} aria-labelledby="fare-heading">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b px-5 py-5 sm:px-6"><div><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-surface text-foreground"><Ticket className="size-4"/></span><h2 id="fare-heading" className="font-display text-lg font-bold">Fare observations</h2></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Cached one-way fares · INR · checks at 1, 7 and 30 days ahead</p></div><span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"><Clock3 className="size-3"/> Historical, not live</span></div>
+      {fares.status==='loading'?<Loading text="Loading fare observations"/>:fares.status==='error'?<Problem message={fares.message} onRetry={refresh}/>:fares.data.length===0?<div className="m-5 rounded-xl border border-dashed bg-surface/30 p-8 text-center sm:m-6"><Ticket className="mx-auto size-6 text-muted-foreground/60"/><h3 className="mt-3 text-sm font-bold">No fare observations yet</h3><p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">The daily collector may not have run for this route yet. Empty provider responses are recorded separately, not as zero prices.</p></div>:<>
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-6"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 text-xs font-semibold"><CheckCircle2 className="size-3.5 text-emerald-600"/> Last check</span><span className="text-xs text-muted-foreground">{latestCheck?utcTime(latestCheck):'Unknown'}</span></div><div className="flex flex-wrap gap-1.5" aria-label="Filter fare observations">{([['all','All'],['ok','Offers'],['empty','Empty'],['error','Errors']] as const).map(([id,label])=><button key={id} onClick={()=>{setFilter(id);setShowAll(false)}} aria-pressed={filter===id} className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${filter===id?'bg-foreground text-background':'bg-surface/70 text-muted-foreground hover:text-foreground'}`}>{label}</button>)}</div></div>
+        <FareTable fares={fares.data.filter(f=>filter==='all'||f.status===filter)} showAll={showAll}/>
+        {fares.data.filter(f=>filter==='all'||f.status===filter).length>9&&<div className="px-5 pb-4 sm:px-6"><button onClick={()=>setShowAll(!showAll)} className="text-xs font-semibold text-brand underline-offset-4 hover:underline">{showAll?'Show fewer':'Show all loaded observations'}</button></div>}
+        <div className="flex items-start gap-2 border-t bg-surface/40 px-5 py-4 text-[11px] leading-relaxed text-muted-foreground sm:px-6"><Info className="mt-0.5 size-3.5 shrink-0"/><p>These are snapshots, not fares available now. An empty result is not a sold-out flight. Collection may happen after the provider found the price. Confirm historical retention and commercial use with Travelpayouts.</p></div>
+      </>}
+    </section>
+
+    <section className="mt-5 grid gap-4 rounded-2xl border bg-surface/40 p-5 sm:p-6 md:grid-cols-[auto_1fr_auto] md:items-start"><span className="flex size-9 items-center justify-center rounded-xl border bg-card text-brand"><ShieldCheck className="size-4"/></span><div><h2 className="text-sm font-bold">Know what the data means</h2><p className="mt-1.5 max-w-3xl text-xs leading-relaxed text-muted-foreground">Passenger figures are industry-wide, can be revised and arrive with a reporting delay. Conflicting or invalid records are excluded, and missing months are not treated as zero. Fare observations do not measure TBO bookings, inventory or demand.</p></div><div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold"><a href="/research/india-market-data.md" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-brand">Methodology <ExternalLink className="size-3"/></a><a href="https://github.com/Vonter/india-aviation-traffic" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-brand">Source &amp; license <ExternalLink className="size-3"/></a></div></section>
+  </>;
+}
+
+function Metric({icon,label,main,detail,trend}:{icon:React.ReactNode;label:string;main:string;detail:string;trend?:number|null}) {
+ return <div className={`${panel} p-4 sm:p-5`}><div className="flex items-center justify-between gap-2"><p className={tiny}>{label}</p><span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-muted-foreground">{icon}</span></div><div className="mt-3 flex items-center gap-1.5"><p className="font-display text-2xl font-bold tracking-tight tabular-nums">{main}</p>{trend!=null&&(trend>=0?<ArrowUpRight className="size-4 text-emerald-600"/>:<ArrowDownRight className="size-4 text-amber-600"/>)}</div><p className="mt-1.5 text-[11px] text-muted-foreground">{detail}</p></div>;
+}
+function TrafficChart({rows}:{rows:Array<MonthlyTraffic|{month:string;passengers:null;quality:'missing'}>}) {
+ const max=Math.max(1,...rows.map(r=>r.passengers??0));
+ return <div className="px-5 pb-5 pt-6 sm:px-6"><div className="relative overflow-x-auto"><div className="relative min-w-[480px] pl-10"><div className="pointer-events-none absolute inset-x-0 top-0 flex h-44 flex-col justify-between text-[10px] text-muted-foreground"><div className="flex items-center gap-2"><span className="w-8 text-right">{value(max)}</span><span className="flex-1 border-t border-dashed"/></div><div className="flex items-center gap-2"><span className="w-8 text-right">{value(Math.round(max/2))}</span><span className="flex-1 border-t border-dashed"/></div><div className="flex items-center gap-2"><span className="w-8 text-right">0</span><span className="flex-1 border-t"/></div></div><div className="relative flex h-44 items-end gap-2 px-1 sm:gap-3" role="img" aria-label="Monthly reported passengers. Missing or ambiguous months have no passenger value.">{rows.map((r,i)=><div key={r.month} className="group flex h-full flex-1 items-end justify-center"><div title={`${shortMonth(r.month)}: ${r.passengers===null?r.quality:value(r.passengers)+' passengers'}`} className={`w-full max-w-10 rounded-t-md transition-colors ${r.passengers===null?'border border-dashed border-amber-400 bg-amber-50 dark:bg-amber-950/30':i===rows.length-1?'bg-brand':'bg-foreground/80 group-hover:bg-brand/75'}`} style={{height:r.passengers===null?'7px':`${Math.max(r.passengers>0?1:0,r.passengers/max*100)}%`}}/></div>)}</div><div className="flex gap-2 px-1 pt-2 sm:gap-3">{rows.map(r=><div key={r.month} className="flex-1 text-center text-[10px] text-muted-foreground">{shortMonth(r.month)}</div>)}</div></div></div><div className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground"><span><span className="mr-1.5 inline-block size-2 rounded-sm bg-foreground/80"/>Reported</span><span><span className="mr-1.5 inline-block size-2 rounded-sm bg-brand"/>Latest month</span><span><span className="mr-1.5 inline-block size-2 rounded-sm border border-dashed border-amber-500"/>Missing / ambiguous</span></div><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Hover for exact values; use table view for accessible month-by-month details. Missing and ambiguous records are not zero.</p></div>;
+}
+function TrafficTable({rows}:{rows:Array<MonthlyTraffic|{month:string;passengers:null;quality:'missing'}>}) {
+ return <div className="px-5 py-5 sm:px-6"><div className="max-h-64 overflow-auto rounded-xl border"><table className="w-full text-left text-xs"><thead className="sticky top-0 bg-surface text-muted-foreground"><tr><th className="px-4 py-3 font-semibold">Month</th><th className="px-4 py-3 font-semibold">Passengers</th><th className="px-4 py-3 font-semibold">Status</th></tr></thead><tbody>{[...rows].reverse().map(r=><tr key={r.month} className="border-t"><td className="px-4 py-2.5 font-medium">{shortMonth(r.month)}</td><td className="px-4 py-2.5 tabular-nums">{r.passengers===null?'—':value(r.passengers)}</td><td className="px-4 py-2.5 capitalize text-muted-foreground">{r.quality==='ok'?'Reported':r.quality}</td></tr>)}</tbody></table></div></div>;
+}
+function FareTable({fares,showAll}:{fares:Fare[];showAll:boolean}) {
+ if(!fares.length)return <p className="px-6 pb-8 pt-3 text-sm text-muted-foreground">No observations match this filter.</p>;
+ return <div className="overflow-x-auto px-5 pb-5 sm:px-6"><table className="w-full min-w-[670px] text-left text-xs"><thead><tr className="border-y bg-surface/50 text-[10px] font-semibold uppercase tracking-[.08em] text-muted-foreground"><th className="px-3 py-3">Checked · UTC</th><th className="px-3 py-3">Departure</th><th className="px-3 py-3">Lead time</th><th className="px-3 py-3">Observed fare</th><th className="px-3 py-3">Airline</th><th className="px-3 py-3">Result</th></tr></thead><tbody>{fares.slice(0,showAll?undefined:9).map(f=><tr key={`${f.collection_day}-${f.departure_date}`} className="border-b last:border-0"><td className="px-3 py-3.5 text-muted-foreground">{utcTime(f.observed_at)}</td><td className="px-3 py-3.5 font-medium">{shortDate(f.departure_date)}</td><td className="px-3 py-3.5 text-muted-foreground">{leadDays(f)} days</td><td className="px-3 py-3.5 font-bold tabular-nums">{f.price_inr==null?'—':`₹${value(f.price_inr)}`}</td><td className="px-3 py-3.5 text-muted-foreground">{f.airline??'—'}</td><td className="px-3 py-3.5"><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${f.status==='ok'?'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300':f.status==='empty'?'bg-surface text-muted-foreground':'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'}`}>{f.status==='ok'?'Cached offer':f.status==='empty'?'No cached offer':'Provider error'}</span></td></tr>)}</tbody></table></div>;
+}
+function Loading({text}:{text:string}){return <div role="status" className="space-y-3 p-6"><div className="h-3 w-32 animate-pulse rounded bg-surface"/><div className="h-20 animate-pulse rounded-xl bg-surface/70"/><p className="text-xs text-muted-foreground">{text}…</p></div>}
+function Problem({message,onRetry}:{message:string;onRetry?:()=>void}){return <div role="alert" className="m-5 rounded-xl border border-red-200 bg-red-50 p-4 text-xs leading-relaxed text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"><p>{message}</p>{onRetry&&<button type="button" onClick={onRetry} className="mt-2 font-bold underline underline-offset-4">Try again</button>}</div>}
