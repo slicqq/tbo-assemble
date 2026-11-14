@@ -133,3 +133,22 @@
 .inventory-page .method-modal p { color: var(--muted-foreground); font-size: 13px; }
 .inventory-page .method-modal a { color: var(--brand); }
 .dark .inventory-page input[type="date"] { color-scheme: dark; }
+.inventory-page .historical-demand { margin: 18px 0; padding: 24px; }
+.inventory-page .historical-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: start; }
+.inventory-page .historical-kicker { display: flex; gap: 6px; align-items: center; color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .09em; }
+.inventory-page .historical-head h2 { margin: 8px 0 4px; font-size: 18px; font-weight: 700; }
+.inventory-page .historical-head p, .inventory-page .historical-target { color: var(--muted-foreground); font-size: 13px; line-height: 1.5; }
+.inventory-page .historical-status { background: #fff3e8; color: #963b0f; border-radius: 999px; padding: 7px 11px; font-size: 11px; font-weight: 700; }
+.inventory-page .historical-controls { display: flex; gap: 14px; flex-wrap: wrap; margin: 20px 0 12px; }
+.inventory-page .historical-controls label { display: grid; gap: 5px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+.inventory-page .historical-controls select { min-height: 42px; padding: 0 12px; border: 1px solid var(--input); border-radius: 9px; color: var(--foreground); background: var(--background); }
+.inventory-page .historical-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin: 16px 0; }
+.inventory-page .historical-metrics > div { min-width: 0; padding: 14px; border-radius: 12px; background: var(--secondary); display: grid; gap: 5px; }
+.inventory-page .historical-metrics span, .inventory-page .historical-metrics small { color: var(--muted-foreground); font-size: 11px; line-height: 1.4; }
+.inventory-page .historical-metrics strong { color: var(--foreground); font-size: 20px; overflow-wrap: anywhere; }
+.inventory-page .historical-validation, .inventory-page .historical-warning { font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+.inventory-page .historical-validation { border-top: 1px solid var(--border); padding-top: 14px; }
+.inventory-page .historical-validation strong, .inventory-page .historical-validation b, .inventory-page .historical-warning strong { color: var(--foreground); }
+.inventory-page .historical-warning { margin: 14px 0; }
+.inventory-page .historical-demand > a { color: var(--brand); display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; min-height: 36px; }
+@media (max-width: 700px) { .inventory-page .historical-demand { padding: 20px; } .inventory-page .historical-metrics { grid-template-columns: 1fr; } .inventory-page .historical-controls label { flex: 1 1 140px; min-width: 0; } }
