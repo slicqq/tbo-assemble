@@ -261,16 +261,21 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile trigger */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-3 z-50 flex size-9 items-center justify-center rounded-md border bg-background shadow-xs lg:hidden"
-        aria-label="Open navigation menu"
-        aria-expanded={mobileOpen}
-        aria-controls="mobile-navigation"
-      >
-        <Menu className="size-4" />
-      </button>
+      {/* Compact, persistent mobile navigation bar */}
+      <div className="fixed inset-x-0 top-0 z-30 flex h-[calc(3.75rem+env(safe-area-inset-top))] items-center gap-3 border-b border-sidebar-border bg-background/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur lg:hidden">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-background shadow-xs"
+          aria-label="Open navigation menu"
+          aria-expanded={mobileOpen}
+          aria-controls="mobile-navigation"
+        >
+          <Menu className="size-5" />
+        </button>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="" className="size-7" />
+        <span className="text-sm font-semibold tracking-tight">TBO Assemble</span>
+      </div>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setMobileOpen(false)} />
@@ -287,7 +292,7 @@ export default function Sidebar() {
       >
         <button
           onClick={() => setMobileOpen(false)}
-          className="absolute right-3 top-[22px] flex size-8 items-center justify-center rounded-md hover:bg-sidebar-accent"
+          className="absolute right-3 top-4 flex size-11 items-center justify-center rounded-md hover:bg-sidebar-accent"
           aria-label="Close navigation menu"
         >
           <X className="size-4 text-muted-foreground" />

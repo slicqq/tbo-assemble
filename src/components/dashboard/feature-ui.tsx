@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/system';
 
 /** The same page header and stat-card proportions as the main Dashboard. */
 export function FeatureHeader({title,description,status,actions}:{title:string;description:string;status?:string;actions?:ReactNode}) {
- return <PageHeader className="mb-6 items-center pl-12 lg:pl-0" title={title} description={description} actions={<>{status&&<span className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-xs font-medium text-muted-foreground"><span className="size-2 rounded-full bg-amber-500"/>{status}</span>}{actions}</>}/>;
+ return <PageHeader className="mb-6 items-center" title={title} description={description} actions={<>{status&&<span className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-xs font-medium text-muted-foreground"><span className="size-2 rounded-full bg-amber-500"/>{status}</span>}{actions}</>}/>;
 }
 export function FeatureNotice({children}:{children:ReactNode}){
  return <div className="flex items-start gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground"><Info className="mt-0.5 size-4 shrink-0"/><div>{children}</div></div>;

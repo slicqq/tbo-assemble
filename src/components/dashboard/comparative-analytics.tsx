@@ -120,14 +120,14 @@ export function ComparativeAnalytics({ events }: ComparativeAnalyticsProps) {
       </div>
 
       {/* Metric Selector */}
-      <div className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-[3px]" role="tablist" aria-label="Metric">
+      <div className="grid w-full grid-cols-2 gap-1 rounded-lg bg-muted p-1 sm:inline-flex sm:h-10 sm:w-fit sm:items-center" role="tablist" aria-label="Metric">
         {(["guests", "rooms", "revenue", "occupancy"] as const).map((m) => (
           <button
             key={m}
             role="tab"
             aria-selected={metric === m}
             onClick={() => setMetric(m)}
-            className={`h-full rounded-md px-3 text-sm font-medium capitalize transition-all ${
+            className={`min-h-11 rounded-md px-3 text-sm font-medium capitalize transition-all sm:min-h-0 sm:h-full ${
               metric === m
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"

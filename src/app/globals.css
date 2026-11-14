@@ -793,3 +793,13 @@ table {
 
 .photo-scrim-strong { background: linear-gradient(to top, rgb(0 0 0 / 0.85), rgb(0 0 0 / 0.3) 55%, transparent); }
 .photo-scrim-panel { background: linear-gradient(to top, rgb(0 0 0 / 0.88), rgb(0 0 0 / 0.62) 45%, rgb(0 0 0 / 0.35)); }
+
+/* Avoid automatic input zoom on iOS while preserving the desktop typography. */
+@media (max-width: 767px) {
+  #main-content input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+  #main-content select,
+  #main-content textarea {
+    font-size: 16px;
+    max-width: 100%;
+  }
+}
