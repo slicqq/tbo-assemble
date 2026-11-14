@@ -38,13 +38,16 @@ export async function POST(request: Request) {
       guestGroup,
       proximityRequest,
       selectedAddOns,
-      totalAmount,
       specialRequests,
     } = await request.json();
 
     // Validate guestName is non-empty
-    if (!guestName || !guestName.trim()) {
+    if (typeof guestName !== "string" || !guestName.trim()) {
       return NextResponse.json({ error: "Guest name is required" }, { status: 400 });
+    }
+
+    if (typeof eventId !== "string" || typeof roomBlockId !== "string") {
+      return NextResponse.json({ error: "Event and room type are required" }, { status: 400 });
     }
 
     // Validate eventId exists and event is active/published
@@ -53,28 +56,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Event not available for booking" }, { status: 400 });
     }
 
-    // Duplicate booking prevention: check if this email already has a booking for this event
-    if (guestEmail) {
-      const existingGuest = await prisma.guest.findFirst({
-        where: {
-          email: guestEmail,
-          eventId,
-          status: "confirmed",
-          bookings: { some: {} },
-        },
-      });
-      if (existingGuest) {
-        return NextResponse.json(
-          { error: "A booking with this email already exists for this event." },
-          { status: 409 }
-        );
-      }
+    if (guestEmail != null && typeof guestEmail !== "string") {
+      return NextResponse.json({ error: "Email must be a string" }, { status: 400 });
     }
+    const normalizedEmail = typeof guestEmail === "string" ? guestEmail.trim().toLowerCase() : "";
 
     // Pre-validate room block exists
     const roomBlock = await prisma.roomBlock.findUnique({ where: { id: roomBlockId } });
-    if (!roomBlock) {
-      return NextResponse.json({ error: "Room type not found." }, { status: 400 });
+    if (!roomBlock || roomBlock.eventId !== eventId) {
+      return NextResponse.json({ error: "Room type not found for this event." }, { status: 400 });
     }
 
     // Server-side price calculation: compute total from room rate + add-ons
@@ -102,14 +92,29 @@ export async function POST(request: Request) {
 
     // Wrap booking creation in a transaction — availability check INSIDE to prevent race conditions
     const result = await prisma.$transaction(async (tx) => {
-      // Re-check room availability inside transaction (prevents double-booking)
-      const freshRoomBlock = await tx.roomBlock.findUnique({ where: { id: roomBlockId } });
-      if (!freshRoomBlock || freshRoomBlock.bookedQty >= freshRoomBlock.totalQty) {
-        throw new Error("SOLD_OUT");
+      // Serialise same-event/same-email requests made through this endpoint.
+      // This is not a substitute for a database uniqueness constraint or for
+      // hardening other legacy mutation endpoints.
+      if (normalizedEmail) {
+        const lockKey = `booking:${eventId}:${normalizedEmail}`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
+        const duplicate = await tx.guest.findFirst({
+          where: { email: { equals: normalizedEmail, mode: "insensitive" }, eventId, status: "confirmed", bookings: { some: {} } },
+          select: { id: true },
+        });
+        if (duplicate) throw new Error("DUPLICATE_EMAIL");
       }
+      // Atomically reserve one available room. A conditional update locks the
+      // row and rechecks its capacity after any concurrent update commits.
+      const reserved = await tx.roomBlock.updateMany({
+        where: { id: roomBlockId, eventId, bookedQty: { lt: tx.roomBlock.fields.totalQty } },
+        data: { bookedQty: { increment: 1 } },
+      });
+      if (reserved.count !== 1) throw new Error("SOLD_OUT");
+      const freshRoomBlock = await tx.roomBlock.findUniqueOrThrow({ where: { id: roomBlockId } });
 
-      // Apply discount rules inside transaction for accurate count
-      const currentBookedCount = freshRoomBlock.bookedQty + 1;
+      // The room counter already includes the reservation in this transaction.
+      const currentBookedCount = freshRoomBlock.bookedQty;
       const discountRules = await tx.discountRule.findMany({
         where: { eventId, isActive: true },
         orderBy: { minRooms: "desc" },
@@ -124,7 +129,7 @@ export async function POST(request: Request) {
       const guest = await tx.guest.create({
         data: {
           name: guestName,
-          email: guestEmail || null,
+          email: normalizedEmail || null,
           phone: guestPhone || null,
           group: guestGroup || null,
           proximityRequest: proximityRequest || null,
@@ -161,25 +166,17 @@ export async function POST(request: Request) {
         }
       }
 
-      // Update room block booked count
-      await tx.roomBlock.update({
-        where: { id: roomBlockId },
+      // Keep the audit entry in the transaction: a failed log must not report
+      // a failure to the guest after silently committing their booking.
+      await tx.activityLog.create({
         data: {
-          bookedQty: { increment: 1 },
+          eventId,
+          action: "booking_created",
+          details: `${guestName} booked ${booking.id.slice(0, 8)} — ₹${booking.totalAmount.toLocaleString("en-IN")}`,
+          actor: guestName,
         },
       });
-
       return { guest, booking };
-    });
-
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        eventId,
-        action: "booking_created",
-        details: `${guestName} booked ${result.booking.id.slice(0, 8)} — ₹${result.booking.totalAmount.toLocaleString("en-IN")}`,
-        actor: guestName,
-      },
     });
 
     return NextResponse.json({
@@ -189,6 +186,9 @@ export async function POST(request: Request) {
       guestId: result.guest.id,
     });
   } catch (error: unknown) {
+    if (error instanceof Error && error.message === "DUPLICATE_EMAIL") {
+      return NextResponse.json({ error: "A booking with this email already exists for this event." }, { status: 409 });
+    }
     if (error instanceof Error && error.message === "SOLD_OUT") {
       return NextResponse.json(
         { error: "This room type is no longer available." },
