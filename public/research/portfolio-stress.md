@@ -1,0 +1,15 @@
+# Portfolio stress test
+
+This interactive comparison applies user-selected shocks to the same synthetic or imported portfolio and budget shown in the planner. It is not a live prediction, proof of resilience, actual purchase, supplier quote, or trading instruction. The underlying demand and elasticity assumptions are not validated for TBO. Controls use percentage changes for demand, selling-price level and new supplier costs, and percentage **points** for extra cancellations.
+
+## Three views
+
+- **Original model plan:** the current model's optimized quantities, costs, prices and three scenario outcomes.
+- **If quantities are committed:** the original quantities and purchase costs are locked. Expected sales, profit and unsold exposure are recalculated under the shock. The planned selling price and its reference price are shifted by the same percentage, with the selling price rounded to whole rupees and floored at ₹1. Since the relative selling-to-reference price is mostly unchanged, this price shock primarily affects revenue, not demand; rounding can change it slightly. Demand and cancellation changes affect sales and unsold exposure.
+- **Replan before buying:** the app recalculates allocation with the same budget, risk setting and quote-review date, using the shocked supplier quote for *new* purchases and the shocked reference price. It again chooses among five prices relative to that new reference, so repricing decisions may differ. The approximate optimizer can leave budget unspent and is not a global-optimum guarantee. An expired original quote remains expired; shocks do not fetch a new one.
+
+All opportunities receive the same scenario multipliers. The demand change multiplies each opportunity's seasonal factor; the cancellation increase is added to its supplied rate and capped at 100%. Existing sellable stock is still deducted, and the model's assumed −1.2 price elasticity and 25%/50%/25% scenario weights are unchanged. No cross-product substitution or demand correlations are estimated. Sold-out uplift is an unvalidated heuristic, not a censoring correction.
+
+For allocated items, the list shows the largest reductions in expected modeled profit from the original plan to the locked-quantity scenario. Unsold exposure is the expected un-recovered purchase cost of unsold units, not an additional loss to subtract from modeled profit. The stress sandbox does not alter the saved plan, optimizer inputs, supplier systems or existing inventory. Results are recalculated locally, and the applied shock settings are not saved.
+
+The three views are not mutually guaranteed: replan assumes the hypothetical purchases can still be changed, that new prices and capacities are available, and that buying at the modeled costs is possible. Excludes customer refunds, supplier cancellation penalties or minimum commitments, taxes, fees, temporal capital lock-up, uncertainty calibration and real-world demand forecasting. Use qualified human review and current supplier contract terms before a decision.

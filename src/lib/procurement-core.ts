@@ -28,7 +28,7 @@ export function trendFactor(o:Opportunity) {
 }
 export function forecast(o:Opportunity) { return Math.max(0, (o.bookings*.55 + o.searches*o.conversion*.45)*trendFactor(o)*o.seasonal*o.signal*(1+o.soldOut/100*.2)*(1-o.cancellations)); }
 const scenarios = [{mult:-1,prob:.25},{mult:0,prob:.5},{mult:1,prob:.25}];
-function evaluate(o:Opportunity, qty:number, price:number, risk:number) {
+export function evaluateAtPrice(o:Opportunity, qty:number, price:number, risk:number) {
  const f=Math.max(0,forecast(o)*Math.pow(price/o.referencePrice,-1.2)-(o.existingStock||0)); // illustrative constant elasticity
  const sold=scenarios.map(s=>Math.min(qty,Math.max(0,f*(1+s.mult*o.volatility))));
  const expectedSold=sold.reduce((a,x,i)=>a+x*scenarios[i].prob,0);
@@ -43,7 +43,7 @@ function evaluate(o:Opportunity, qty:number, price:number, risk:number) {
 }
 export function bestAtQuantity(o:Opportunity,qty:number,risk:number) {
  const prices=[.90,.95,1,1.05,1.10].map(m=>Math.max(1,Math.round(o.referencePrice*m)));
- return prices.map(price=>({price,...evaluate(o,qty,price,risk)})).sort((a,b)=>b.objective-a.objective)[0];
+ return prices.map(price=>({price,...evaluateAtPrice(o,qty,price,risk)})).sort((a,b)=>b.objective-a.objective)[0];
 }
 export function createGreedyPlan(items:Opportunity[], budget:number, risk:number, options:PlanOptions={}):PlanRow[] {
  const asOf=options.asOf || new Date().toISOString().slice(0,10);

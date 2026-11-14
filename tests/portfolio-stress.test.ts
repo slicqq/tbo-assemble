@@ -1,0 +1,12 @@
+import {test} from 'node:test';
+import {strict as assert} from 'node:assert';
+import {opportunities} from '../src/lib/procurement-core';
+import {optimizePortfolio} from '../src/lib/portfolio-optimizer';
+import {simulatePortfolioStress,noStress} from '../src/lib/portfolio-stress';
+const asOf='2026-11-13',budget=1000000,risk=.35;
+const rows=optimizePortfolio(opportunities,budget,risk,{asOf}).rows;
+const run=(x:Partial<typeof noStress>)=>simulatePortfolioStress(rows,budget,risk,asOf,{...noStress,...x});
+test('neutral shock reproduces the original allocation and outcome',()=>{const result=run({});assert.deepEqual(result.fixed,result.baseline);assert.deepEqual(result.replanned,result.baseline);assert.deepEqual(result.replannedRows,rows)});
+test('demand and cancellation stress worsen fixed portfolio without rewriting commitments',()=>{const normal=run({}),shock=run({demandPercent:-30,cancellationPoints:10});assert.equal(shock.fixed.spend,normal.fixed.spend);assert.equal(shock.fixed.units,normal.fixed.units);assert.ok(shock.fixed.expectedProfit<=normal.fixed.expectedProfit);assert.ok(shock.fixed.expectedUnsold>=normal.fixed.expectedUnsold);assert.ok(shock.replanned.spend<=budget);});
+test('new supplier quote shock applies only to new plan; retail price shock affects fixed income',()=>{const normal=run({}),cost=run({newQuotePercent:25}),retail=run({pricePercent:-20});assert.deepEqual(cost.fixed,normal.fixed);assert.ok(cost.replanned.spend<=budget);assert.ok(retail.fixed.expectedProfit<normal.fixed.expectedProfit);assert.equal(retail.fixed.spend,normal.fixed.spend);});
+test('zero allocation and arbitrary nonfinite shocks remain finite and budget-safe',()=>{const zero=optimizePortfolio(opportunities,0,risk,{asOf}).rows;const result=simulatePortfolioStress(zero,0,risk,asOf,{demandPercent:NaN,pricePercent:Infinity,newQuotePercent:-Infinity,cancellationPoints:NaN});assert.equal(result.fixed.spend,0);assert.equal(result.replanned.spend,0);assert.equal(result.exposures.length,0);});
