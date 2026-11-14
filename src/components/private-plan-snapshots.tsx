@@ -67,9 +67,9 @@ export default function PrivatePlanSnapshots({ input, onLoad, hasUnappliedBudget
  }
  function load(snapshot:Snapshot){
    try{
-     if(snapshot.model_version!==PLAN_MODEL_VERSION)throw new Error('This snapshot uses another model version and cannot be opened here.');
+     if(snapshot.model_version!==PLAN_MODEL_VERSION && snapshot.model_version!=='scenario-greedy-v2')throw new Error('This snapshot uses an unsupported model version and cannot be opened here.');
      const clean=validatePlanInput({items:snapshot.items,budget:Number(snapshot.budget),risk:snapshot.risk,asOf:snapshot.as_of,source:snapshot.source});
-     onLoad(clean);setError('');setNotice(`Loaded “${snapshot.name}”. Review the date and assumptions before using the results.`);
+     onLoad(clean);setError('');setNotice(`Loaded “${snapshot.name}”. ${snapshot.model_version===PLAN_MODEL_VERSION?'':'Recalculated with the newer allocation model. '}Review the date and assumptions before using the results.`);
    }catch(e){setError(e instanceof Error?e.message:'Could not open the saved plan.');setNotice('');}
  }
  return <section id="saved-plans" className="panel saved-plans" aria-labelledby="saved-plans-heading">

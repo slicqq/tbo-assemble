@@ -183,3 +183,12 @@
 .inventory-app .readiness-grid strong,.inventory-app .readiness-grid span{display:block}
 .inventory-app .readiness-grid strong{font-size:18px;color:#26211d}.inventory-app .readiness-grid span{font-size:11px;color:#655f58;margin-top:3px;line-height:1.4}
 @media(max-width:480px){.inventory-app .readiness-grid{grid-template-columns:1fr}.inventory-app .readiness-grid>div{display:flex;align-items:center;gap:10px}.inventory-app .readiness-grid span{margin:0}}
+.inventory-app .optimizer-panel{margin-top:16px;padding:20px;overflow-wrap:anywhere}
+.inventory-app .optimizer-panel h2{font-size:16px;font-weight:700;margin:0}
+.inventory-app .optimizer-panel p{font-size:12px;color:#655f58;line-height:1.6;margin:6px 0 0}
+.inventory-app .optimizer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:15px 0}
+.inventory-app .optimizer-grid>div{border:1px solid #eee8e0;background:#faf8f5;border-radius:10px;padding:12px}
+.inventory-app .optimizer-grid span,.inventory-app .optimizer-grid strong{display:block}
+.inventory-app .optimizer-grid span{font-size:11px;color:#655f58;line-height:1.4}
+.inventory-app .optimizer-grid strong{font-size:17px;color:#26211d;margin-top:7px}
+@media(max-width:700px){.inventory-app .optimizer-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -8,7 +8,7 @@ CREATE TABLE public.private_inventory_plans (
  budget bigint NOT NULL CHECK (budget BETWEEN 0 AND 1000000000),
  risk double precision NOT NULL CHECK (risk BETWEEN 0 AND 0.8),
  as_of date NOT NULL CHECK (as_of BETWEEN DATE '1900-01-01' AND DATE '2100-12-31'),
- model_version text NOT NULL CHECK (model_version = 'scenario-greedy-v2'),
+ model_version text NOT NULL CHECK (model_version IN ('scenario-greedy-v2', 'scenario-grid-v3')),
  created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX private_inventory_plans_owner_created_idx ON public.private_inventory_plans (owner_id, created_at DESC);
