@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
 const AUTH_STORAGE_KEY = "tbo-auth";
 
@@ -8,7 +9,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: { name: string; email: string; role: string } | null;
   login: (email: string, password: string) => boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
+  authMode: "supabase" | "legacy" | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,40 +26,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthContextType["user"]>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<"supabase" | "legacy" | null>(null);
 
   useEffect(() => {
-    // Check localStorage for existing session
-    try {
-      const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (stored) {
+    let active = true;
+    let authSubscription: { unsubscribe: () => void } | undefined;
+    const loadLegacy = () => {
+      try {
+        const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+        if (!stored) return null;
         const parsed = JSON.parse(stored);
-        setUser(parsed);
-        setIsAuthenticated(true);
-      }
-    } catch (e) {
-      if (process.env.NODE_ENV === 'development') console.warn('Auth parse error:', e);
-    }
-    setIsLoading(false);
-  }, []);
-
-  // Multi-tab auth sync
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
+        return parsed && typeof parsed.name === 'string' && typeof parsed.email === 'string' ? parsed : null;
+      } catch { return null; }
+    };
+    const applyLegacy = () => {
+      if (!active) return;
+      const legacy = loadLegacy();
+      setUser(legacy); setAuthMode(legacy ? 'legacy' : null); setIsAuthenticated(Boolean(legacy));
+    };
+    try {
+      const client = supabaseBrowser();
+      const refresh = async () => {
+        try {
+          const { data, error } = await client.auth.getUser();
+          if (!active) return;
+          if (!error && data.user) {
+            const metaName = data.user.user_metadata?.full_name;
+            const name = typeof metaName === 'string' && metaName.trim() ? metaName.trim().slice(0, 100) : (data.user.email || 'User');
+            setUser({ name, email: data.user.email || '', role: 'Account' });
+            setAuthMode('supabase'); setIsAuthenticated(true);
+          } else applyLegacy();
+        } catch { applyLegacy(); }
+        finally { if (active) setIsLoading(false); }
+      };
+      void refresh();
+      const { data } = client.auth.onAuthStateChange(() => { setTimeout(() => { void refresh(); }, 0); });
+      authSubscription = data.subscription;
+    } catch { setTimeout(() => { applyLegacy(); if (active) setIsLoading(false); }, 0); }
+    const storageChanged = (e: StorageEvent) => {
       if (e.key === AUTH_STORAGE_KEY) {
-        if (e.newValue) {
-          try {
-            const parsed = JSON.parse(e.newValue);
-            setUser(parsed);
-            setIsAuthenticated(true);
-          } catch { /* ignore */ }
-        } else {
-          setUser(null);
-          setIsAuthenticated(false);
-        }
+        try { void supabaseBrowser().auth.getUser().then(({data}) => { if (!data.user) applyLegacy(); }).catch(applyLegacy); }
+        catch { applyLegacy(); }
       }
     };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener('storage', storageChanged);
+    return () => { active = false; authSubscription?.unsubscribe(); window.removeEventListener('storage', storageChanged); };
   }, []);
 
   const login = useCallback((email: string, password: string): boolean => {
@@ -67,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (found) {
       const userData = { name: found.name, email: found.email, role: found.role };
       setUser(userData);
+      setAuthMode("legacy");
       setIsAuthenticated(true);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
       return true;
@@ -74,10 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   }, []);
 
-  const logout = useCallback(() => {
-    setUser(null);
-    setIsAuthenticated(false);
+  const logout = useCallback(async () => {
+    // Clear both sessions to avoid silently falling back to a shared demo login.
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    try { await supabaseBrowser().auth.signOut(); } catch { /* clear local UI regardless */ }
+    setUser(null); setAuthMode(null); setIsAuthenticated(false);
   }, []);
 
   if (isLoading) {
@@ -93,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, authMode }}>
       {children}
     </AuthContext.Provider>
   );

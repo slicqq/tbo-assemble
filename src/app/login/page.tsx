@@ -38,12 +38,12 @@ export default function LoginPage() {
       } else if (mode === "signup") {
         const { data, error } = await client.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() }, emailRedirectTo: `${window.location.origin}/secure-account/callback` } });
         if (error) throw error;
-        if (data.session) { router.replace("/secure-account"); router.refresh(); }
+        if (data.session) { router.replace("/dashboard"); router.refresh(); }
         else setMessage("If registration is available, check your email for a confirmation link, then sign in.");
       } else {
         const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
-        router.replace("/secure-account"); router.refresh();
+        router.replace("/dashboard"); router.refresh();
       }
     } catch (error) {
       setIsError(true); setMessage(authErrorMessage(error));

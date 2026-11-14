@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard,
+  LockKeyhole,
   CalendarPlus,
   Hotel,
   Users,
@@ -39,7 +40,8 @@ import {
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, description: "Overview & analytics", shortcut: "Alt+D" },
-  { name: "Create Event", href: "/dashboard/onboarding", icon: Sparkles, description: "AI-powered setup", shortcut: "Alt+N" },
+  { name: "Create Event (shared)", href: "/dashboard/onboarding", icon: Sparkles, description: "Create an event in the shared legacy workspace", shortcut: "Alt+N" },
+  { name: "My Private Drafts", href: "/secure-account", icon: LockKeyhole, description: "Your account’s private basic event drafts" },
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
   { name: "Inventory Planner", href: "/inventory", icon: PackageSearch, description: "Procurement opportunities and budget planning" },
@@ -162,7 +164,7 @@ export default function Sidebar() {
 
         <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workspace</p>
         <ul className="space-y-1">
-          {navigation.slice(0, 4).map((item) => {
+          {navigation.slice(0, 5).map((item) => {
             const isActive = pathname === item.href;
             return (
               <li key={item.name}>
@@ -188,7 +190,7 @@ export default function Sidebar() {
 
         <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Travel intelligence</p>
         <ul className="space-y-1">
-          {navigation.slice(4).map((item) => {
+          {navigation.slice(5).map((item) => {
             const isActive = pathname === item.href;
             return (
               <li key={item.name}>
@@ -242,7 +244,7 @@ export default function Sidebar() {
             {(user ? [
               { label: "Keyboard shortcuts (?)", icon: HelpCircle, onClick: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" })), spin: false },
               { label: "Reset Demo Data", icon: RotateCcw, onClick: handleDemoReset, spin: resetting },
-              { label: "Sign out", icon: LogOut, onClick: () => { logout(); router.push("/legacy-login"); }, spin: false },
+              { label: "Sign out", icon: LogOut, onClick: async () => { await logout(); router.push("/login"); }, spin: false },
             ] : []).map((a) => (
               <button
                 key={a.label}
