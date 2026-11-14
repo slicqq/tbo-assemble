@@ -201,16 +201,6 @@ export default function Sidebar() {
           })}
         </ul>
 
-        {pathname === "/inventory" && (
-          <>
-            <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">On this page</p>
-            <ul className="space-y-1">{[
-              ["Strategy & budget", "#allocation"], ["Demand outlook", "#forecast"],
-              ["Market context", "#live-market"], ["Opportunities", "#opportunities"],
-            ].map(([label, href]) => <li key={href}><a href={href} onClick={() => setMobileOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground">{label}</a></li>)}</ul>
-          </>
-        )}
-
         {eventId && (
           <>
             <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Event</p>
