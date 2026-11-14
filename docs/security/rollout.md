@@ -1,9 +1,9 @@
 # Supabase Auth rollout — not yet production-ready
 
 The `/login` page uses Supabase Auth, and `/secure-account` verifies identity through `getUser()`.
-The account can create and list basic private drafts in `public.private_event_drafts` using
-a user-token Supabase client and owner-scoped RLS. Drafts are separate from the old
-dashboard and cannot yet have rooms, guests or bookings. The existing public event and
+The account can create, edit and delete private event drafts and room blocks using
+a user-token Supabase client and owner-scoped RLS. Private events remain separate from the old
+dashboard and do not yet support guests or bookings. The existing public event and
 booking routes are not protected by this preview.
 Do not use the current deployment for real customer data.
 
@@ -25,6 +25,10 @@ Next stages before switching login:
 
 ## Private draft rollout
 
-`docs/security/private-event-drafts.sql` creates a new, separate table with RLS, owner derived from `auth.uid()`, and column-level insert permissions; clients cannot supply the owner or ID. Authenticated users can select and insert their own rows, but cannot update or delete them in this first slice. Account deletion cascades to that user's drafts. Legacy records are not migrated or claimed. The server verifies `getUser()` and queries using the caller's token and an explicit owner filter, rather than the elevated Prisma connection.
+`docs/security/private-event-drafts.sql` creates a new, separate table with RLS, owner derived from `auth.uid()`, and column-level insert permissions; clients cannot supply the owner or ID. The subsequent workspace migration adds owner-only updates and deletes. Account deletion cascades to that user's drafts. Legacy records are not migrated or claimed. The server verifies `getUser()` and queries using the caller's token and an explicit owner filter, rather than the elevated Prisma connection.
 
-Local tests exercise two synthetic user identities against PostgreSQL RLS, column grants and anonymous denial. The browser create/list path was exercised using a mock auth service, not real Supabase Auth. Real email confirmation and live authenticated cross-user tests remain pending. Any service-role or database owner connection can bypass RLS. This feature does not secure legacy APIs, guest links, booking data, or provide rate limiting; it is not a complete private event workspace.
+Local PostgreSQL RLS tests and real Supabase synthetic-account browser/API tests exercise owner operations, cross-user denial and anonymous denial. Real email confirmation remains disabled. Any service-role or database owner connection can bypass RLS. This feature does not secure legacy APIs, guest links, booking data, or provide rate limiting; it is not a complete private event workspace.
+
+## Private events and room blocks
+
+`private-event-workspace.sql` extends the existing owner-scoped drafts with owner-only edit and delete, and creates a separate private room-block table. The composite `(event_id, owner_id)` foreign key ensures a child cannot attach to another owner's event; owner and parent columns cannot be supplied or changed except for choosing a parent at insertion. RLS and restricted column grants enforce access even for direct API calls. Deleting a draft cascades its room blocks. The workspace uses the caller's Supabase session and revalidates identity, never privileged Prisma. Existing shared events, bookings and guest links are untouched. Room blocks are planning records, not live inventory, guest bookings or supplier commitments. Email ownership is unverified: do not enter sensitive information. This does not secure legacy endpoints.

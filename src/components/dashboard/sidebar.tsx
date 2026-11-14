@@ -41,7 +41,7 @@ import {
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, description: "Overview & analytics", shortcut: "Alt+D" },
   { name: "Create Event (shared)", href: "/dashboard/onboarding", icon: Sparkles, description: "Create an event in the shared legacy workspace", shortcut: "Alt+N" },
-  { name: "My Private Drafts", href: "/secure-account", icon: LockKeyhole, description: "Your account’s private basic event drafts" },
+  { name: "My Private Events", href: "/dashboard/private-events", icon: LockKeyhole, description: "Your account’s private event drafts and room blocks" },
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
   { name: "Inventory Decisions", href: "/inventory", icon: PackageSearch, description: "Demand, procurement opportunities and budget planning" },
