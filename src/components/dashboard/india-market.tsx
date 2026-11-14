@@ -10,6 +10,7 @@ import {
 import { ROUTES, shiftMonth, type MonthlyTraffic } from '@/lib/india-market';
 import { FeatureHeader, FeatureMetric, FeatureNotice } from '@/components/dashboard/feature-ui';
 import { ComparisonBars } from '@/components/dashboard/data-visuals';
+import TrafficValidation from '@/components/dashboard/traffic-validation';
 
 type Traffic = {
   sourceRowCount: number;
@@ -124,13 +125,15 @@ function RouteData({routeKey,refresh}:{routeKey:string;refresh:()=>void}) {
       <section className={`${panel} flex flex-col overflow-hidden`} aria-labelledby="baseline-heading">
         <div className="border-b px-5 py-5 sm:px-6"><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-brand/10 text-brand"><TrendingUp className="size-4"/></span><h2 id="baseline-heading" className="font-display text-lg font-bold">Seasonal reference</h2></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">A simple benchmark, not a TBO forecast</p></div>
         {traffic.status==='loading'?<Loading text="Calculating reference"/>:traffic.status==='error'?<Problem message="Reference unavailable while traffic data is offline."/>:<div className="flex flex-1 flex-col p-5 sm:p-6">
-          <div className="rounded-xl border border-brand/15 bg-brand/[0.04] p-4"><div className="flex items-center justify-between gap-2"><p className={tiny}>Next reported month</p><span className="rounded-md bg-card px-2 py-1 text-[10px] font-semibold text-muted-foreground">{traffic.data.reference?.target?shortMonth(traffic.data.reference.target):'—'}</span></div><p className="font-display mt-4 text-3xl font-bold tracking-tight tabular-nums">{traffic.data.reference?.estimate==null?'—':value(traffic.data.reference.estimate)}</p><p className="mt-1 text-xs text-muted-foreground">Reference passengers</p></div>
+          <div className="rounded-xl border border-brand/15 bg-brand/[0.04] p-4"><div className="flex items-center justify-between gap-2"><p className={tiny}>Month after latest record</p><span className="rounded-md bg-card px-2 py-1 text-[10px] font-semibold text-muted-foreground">{traffic.data.reference?.target?shortMonth(traffic.data.reference.target):'—'}</span></div><p className="font-display mt-4 text-3xl font-bold tracking-tight tabular-nums">{traffic.data.reference?.estimate==null?'—':value(traffic.data.reference.estimate)}</p><p className="mt-1 text-xs text-muted-foreground">Reference passengers · may be historical, not a current forecast</p></div>
           <div className="mt-5 flex items-center justify-between gap-3 border-b pb-4"><div><p className="text-xs font-semibold">How it works</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Uses the same month in the previous year.</p></div><span className="rounded-lg bg-surface p-2 text-muted-foreground"><CalendarDays className="size-4"/></span></div>
           <div className="mt-4"><p className="text-xs font-semibold">Historical test · 2025</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{traffic.data.reference?.mae==null?'Not enough comparable months.':`Average absolute error: ${value(traffic.data.reference.mae)} passengers across ${traffic.data.reference.holdoutCount} months.`}</p></div>
           <p className="mt-auto pt-5 text-[11px] leading-relaxed text-muted-foreground">Reporting is delayed, so the next reported month may already have passed. Past errors are not a guarantee of accuracy.</p>
         </div>}
       </section>
     </div>
+
+    {data&&<TrafficValidation rows={data.monthly}/>}
 
     <section className={`${panel} mt-4 overflow-hidden`} aria-labelledby="fare-heading">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b px-5 py-5 sm:px-6"><div><div className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-surface text-foreground"><Ticket className="size-4"/></span><h2 id="fare-heading" className="font-display text-lg font-bold">Fare observations</h2></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Cached one-way fares · INR · checks at 1, 7 and 30 days ahead</p></div><span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"><Clock3 className="size-3"/> Historical, not live</span></div>
