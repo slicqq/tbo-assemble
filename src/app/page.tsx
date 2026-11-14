@@ -136,7 +136,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/inventory">Inventory intelligence</Link></Button>
-            <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/dashboard">Sign in</Link></Button>
+            <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/login">Sign in</Link></Button>
             <Button asChild className="hidden sm:inline-flex"><Link href="/dashboard/onboarding">Get started</Link></Button>
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation menu" aria-expanded={mobileNav ? "true" : "false"}>
               {mobileNav ? <X /> : <Menu />}
@@ -179,7 +179,7 @@ export default function Home() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Button asChild size="lg"><Link href="/dashboard/onboarding">Start 60-second setup <ArrowRight /></Link></Button>
-              <Button asChild size="lg" variant="secondary"><Link href="/dashboard"><BarChart3 /> View live demo</Link></Button>
+              <Button asChild size="lg" variant="secondary"><Link href="/inventory"><BarChart3 /> View synthetic demo</Link></Button>
               <Button asChild size="lg" variant="outline"><Link href="/inventory">Inventory intelligence <ArrowRight /></Link></Button>
             </div>
             <div className="mt-10 flex items-center gap-4 border-t pt-6">
@@ -426,7 +426,7 @@ export default function Home() {
               <p className="mt-4 max-w-md text-[17px] leading-relaxed text-black/70">See how TBO Assemble replaces spreadsheets with an intelligent, AI-powered workflow. Try the live demo now.</p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Button asChild size="lg" className="bg-black text-white hover:bg-black/85"><Link href="/dashboard/onboarding">Create your first event <ArrowRight /></Link></Button>
-                <Button asChild size="lg" variant="ghost" className="bg-black/10 text-black hover:bg-black/15 hover:text-black"><Link href="/dashboard">Explore dashboard</Link></Button>
+                <Button asChild size="lg" variant="ghost" className="bg-black/10 text-black hover:bg-black/15 hover:text-black"><Link href="/inventory">Explore the demo</Link></Button>
               </div>
             </div>
             <div className="mx-auto w-full max-w-[280px]">

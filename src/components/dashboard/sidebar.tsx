@@ -242,7 +242,7 @@ export default function Sidebar() {
             {(user ? [
               { label: "Keyboard shortcuts (?)", icon: HelpCircle, onClick: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" })), spin: false },
               { label: "Reset Demo Data", icon: RotateCcw, onClick: handleDemoReset, spin: resetting },
-              { label: "Sign out", icon: LogOut, onClick: () => { logout(); router.push("/login"); }, spin: false },
+              { label: "Sign out", icon: LogOut, onClick: () => { logout(); router.push("/legacy-login"); }, spin: false },
             ] : []).map((a) => (
               <button
                 key={a.label}

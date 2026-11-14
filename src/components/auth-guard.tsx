@@ -10,7 +10,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push("/login");
+      router.push("/legacy-login");
     }
   }, [isAuthenticated, router]);
 
