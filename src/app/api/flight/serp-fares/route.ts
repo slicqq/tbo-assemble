@@ -1,6 +1,6 @@
 import {NextRequest,NextResponse} from 'next/server';
 import {ROUTES,isoPlusDays} from '@/lib/india-market';
-import {parseSerpFare} from '@/lib/serpapi-fares';
+import {parseSerpFare,evaluateSerpHistory} from '@/lib/serpapi-fares';
 export const dynamic='force-dynamic';
 export const maxDuration=30;
 const HEADERS={'Cache-Control':'no-store'};
@@ -27,6 +27,7 @@ export async function POST(req:NextRequest){
   const response=await fetch('https://serpapi.com/search.json?'+query,{signal:AbortSignal.timeout(25000),cache:'no-store'});const json=await response.json();
   // Never forward provider errors: they can contain request details or secrets.
   if(!response.ok||json.error||json.search_metadata?.status==='Error')return NextResponse.json({error:'SerpApi could not complete the search. Check the key, quota and route availability.'},{status:502,headers:HEADERS});
-  return NextResponse.json({source:'Google Flights via SerpApi',origin,destination,departureDate,fetchedAt:new Date().toISOString(),...parseSerpFare(json)}, {headers:HEADERS});
+  const at=new Date(),fare=parseSerpFare(json,at);
+  return NextResponse.json({source:'Google Flights via SerpApi',origin,destination,departureDate,fetchedAt:at.toISOString(),...fare,forecast:evaluateSerpHistory(fare,at)}, {headers:HEADERS});
  }catch{return NextResponse.json({error:'SerpApi did not respond. Please try again later; the attempt counted against the app safety limit.'},{status:502,headers:HEADERS})}
 }
