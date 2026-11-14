@@ -1,5 +1,7 @@
 # Inventory intelligence: research and implementation notes
 
+See the [problem-statement coverage and remaining work](challenge-coverage.md) for a feature-by-feature status.
+
 ## Scope and evidence quality
 
 The accompanying catalogs contain **239 candidate scholarly articles** and **231 candidate public GitHub repositories**, retrieved on 13 November 2026 via OpenAlex and GitHub's search APIs. Six topical searches per source cover hotel forecasting, revenue management, tourism demand, stochastic inventory and cancellations. Duplicates were removed by OpenAlex ID or GitHub full name. The query used for each result is recorded; the collection script is included. These are **search-discovered candidates, not 470 individually read, validated or endorsed sources**. Search results can include tangential work; publication status, full texts, data quality, repository functionality, maintenance, licensing and relevance need individual review. "Foreign" is interpreted as external to the original project; authors' or maintainers' nationality/location was not verified. Stars and timestamps are snapshots, not recommendations. Do not reuse code without checking its license.
@@ -23,6 +25,10 @@ These are method inspirations, not claims that every candidate source was read o
 For each product-period, illustrative net demand = (0.55 × historical bookings + 0.45 × searches × look-to-book conversion) × optional capped historical-trend factor × seasonal factor × external-signal factor × (1 + 0.2 × sold-out rate) × (1 − cancellation rate). The external signal is an invented input, not a live feed. For each of five candidate prices (90–110% of reference), adjusted demand = net demand × (price/reference price)^−1.2. Low/base/high demand have weights 25%/50%/25% and multipliers 1−volatility, 1, 1+volatility. Scenario sales are capped at purchased units; profit is sales × price − units × buy cost. Unsold stock may recover an optional fraction of purchase cost; there is no cancellation refund. Risk-adjusted objective = expected profit − risk weight × (expected profit − low-scenario profit).
 
 Existing sellable stock is subtracted from price-adjusted demand. Optional quote expiry excludes expired inventory from allocation. The allocation engine compares a rounded budget-grid search with a marginal-return greedy fallback and reports a model-only upper bound. It is approximate, not a proven globally optimal allocation. Products are independent; low-scenario profit is the sum of each product's low scenario, a stress scenario rather than a probability-calibrated portfolio VaR. Demand forecasting is point-based with arbitrary scenarios, not a trained or calibrated model. The sold-out uplift is an arbitrary heuristic, not a validated method for correcting censored demand; historical demand can be censored by prior stockouts. Purchase timing and supplier strategies are rule-based suggestions, not trained or connected to suppliers. Optional per-row minimum purchase and one-time non-refundable fee assumptions are modeled; other fees, refunds, supplier-wide minimums, currency conversion, substitution, cancellation penalties and working capital timing are not. Room nights and seats are treated as independent units.
+
+## Cancellation scenarios
+
+The separate [cancellation and booking-risk sandbox](cancellation-sandbox.md) models a fixed hypothetical booking count, cancellation fees and denied customers against a purchased block. It does not change the portfolio plan, predict actual demand or recommend overbooking.
 
 ## Forecast validation
 
