@@ -20,7 +20,7 @@ def build(raw):
     rows=[]
     for hotel in ('City Hotel','Resort Hotel'):
         asof=dt.date(2016,3,1)
-        while asof<=dt.date(2016,6,30):
+        while asof<=dt.date(2016,9,30):
             # Fixed stay window as-of +30 through +59; historical booking windows
             # and target refer to exactly that same set of arrival dates.
             def total(bstart,bend):

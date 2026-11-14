@@ -19,3 +19,22 @@ A separate ridge linear regression per hotel uses these two features, a fixed pe
 An illustrative nominal 80% symmetric interval uses the ceil((n+1)×0.8) ordered absolute error on the May calibration examples of the selected method, with lower endpoint clipped to zero. Model selection and interval calibration use the same window, which can bias results; temporal dependence and distribution shift invalidate a guaranteed coverage interpretation. June empirical coverage is reported alongside the range. Even if the June result were positive, the holdout would not establish operational validity.
 
 The planner does not convert these records into inventory, forecasts or profit: booking records are not room-nights or flight seats, the geographic and time domains differ, no calibrated cancellation rate or current supplier data exists, and the June holdout is not a production validation. The existing planner continues using its clearly labelled unvalidated heuristic.
+
+## Adaptive rolling follow-up and locked later test
+
+The June fixed-model test above was examined before developing this follow-up. We tried multiple recent training windows and selection thresholds against June; the final fixed choices (21 days and 20% required improvement) were selected using that development period. **June is therefore not an independent test of this follow-up.** We then evaluated July–August and September without changing the method after inspecting their outcomes. The app displays September, with July–August results below. These later periods were not used in that parameter search, but all come from the same old dataset; they are not independent properties or prospective deployment tests.
+
+At each historical as-of date, fit a ridge regression on the 21 most recent examples whose entire seven-day outcome has already ended: as-of−27 through as-of−7. For method selection, replay 28 prior forecast dates, from as-of−34 to as-of−7. Each prior candidate is fitted using only training labels that would have been complete at **its own** as-of date. Compare the model's MAE with the prior-seven-day-count baseline on replay dates where both are available. Use the trained model only if its MAE is at least 20% lower than baseline; otherwise fall back to baseline. If fewer than 20 paired replay forecasts or 21 training examples are available, do not select the model.
+
+The displayed interval is the nominal 80% empirical absolute-error radius from these same prior replays for the selected method (lower bound clipped to zero). The method selection and interval calibration are not independent and data are autocorrelated, so this interval has no guaranteed coverage. All metrics are retrospective, and labels are reconstructed from a later arrival-selected extract; this replay cannot establish that the actual historical records were available as assumed.
+
+Results in gross booking records, lower MAE is better:
+
+| Period | Hotel | Adaptive MAE | Baseline MAE | Trained model selected | Nominal 80% range coverage |
+|---|---|---:|---:|---:|---:|
+| Jul–Aug 2016 | City | 50.29 | 50.29 | 0/62 days | 59.7% |
+| Jul–Aug 2016 | Resort | 8.26 | 8.26 | 0/62 days | 90.3% |
+| Sep 2016 | City | 105.95 | 100.33 | 6/30 days | 73.3% |
+| Sep 2016 | Resort | 35.13 | 35.13 | 0/30 days | 50.0% |
+
+These overlapping forecast dates share many bookings, so sample sizes are not independent events. The adaptive approach did not improve on the baseline in these tests; its confidence intervals did not meet their nominal coverage in most periods. It remains excluded from procurement allocation.

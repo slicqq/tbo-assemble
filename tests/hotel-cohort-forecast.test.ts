@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import raw from '../src/data/public-hotel-cohorts.json';
 import {assessHotelCohorts} from '../src/lib/hotel-cohort-forecast';
-assert.equal(raw.validSourceRecords,119390);assert.equal(raw.rows.length,244);
+assert.equal(raw.validSourceRecords,119390);assert.equal(raw.rows.length,428);
 for(const hotel of ['City Hotel','Resort Hotel']) {
  const a=assessHotelCohorts(raw.rows,hotel);
  assert.equal(a.trainCount,55);assert.equal(a.calibrationCount,24);assert.equal(a.testCount,30);
