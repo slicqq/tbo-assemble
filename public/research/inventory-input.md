@@ -37,3 +37,9 @@ The template includes these optional inputs; older templates without them still 
 The strategy suggestion is a simple decision rule, not a supplier integration or guaranteed optimum. `integration` and `timing` remain required for compatibility with earlier templates, but `timing` is no longer used to recommend purchase timing. The `integration` value is displayed only as a user-supplied supplier label. You must verify all contract terms.
 
 - `previousBookings` and `previousSearches`: previous comparable period's totals, used to derive booking/search trends. When each prior value is positive, the model applies 30% of relative booking change and 20% of relative search change, combined and capped at −20% to +20%. A blank or zero prior value adds no trend adjustment. The coefficients are assumptions, not trained estimates.
+
+
+- `minOrderUnits`: optional whole-number minimum for a single item and period, between 1 and its capacity. The model selects either 0 or at least this amount. Blank means 1, not a verified contractual term. A zero-capacity row may leave the field blank and cannot be purchased.
+- `fixedOrderFee`: optional non-negative one-time INR fee (maximum ₹1 crore), charged once per opportunity if any units are bought. Blank means zero. It is included in budget and every profit scenario and assumed non-refundable; it is not included in the unsold-unit exposure metric. Fee is per row, not a shared supplier-wide fee. Taxes and other fees must be included manually in inputs where appropriate; no automatic tax or contract validation is performed.
+
+The on-page Supplier terms controls edit the current in-memory inputs. Saving a plan explicitly also stores those inputs; loading an older version recalculates with the new method. The manual quote-review panel remains separate and does not automatically apply quotes or terms.

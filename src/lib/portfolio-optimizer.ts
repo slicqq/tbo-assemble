@@ -1,4 +1,4 @@
-import { bestAtQuantity, createGreedyPlan, planRow, timingFor, type Opportunity, type PlanOptions, type PlanRow } from './procurement-core';
+import { bestAtQuantity, createGreedyPlan, planRow, timingFor, purchaseCost, minimumPurchase, type Opportunity, type PlanOptions, type PlanRow } from './procurement-core';
 
 type Choice={qty:number;cost:number;value:number};
 export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'; bucketCount:number};
@@ -20,7 +20,7 @@ export function optimizePortfolio(items:Opportunity[], budget:number, risk:numbe
  while(baselineSpend>budget){
   let i=baseline.length-1;while(i>=0&&baseline[i].qty===0)i--;
   if(i<0)break;
-  const q=baseline[i].qty-1;
+  const q=baseline[i].qty-1<minimumPurchase(items[i])?0:baseline[i].qty-1;
   baseline[i]=planRow(items[i],q,bestAtQuantity(items[i],q,risk),timingFor(items[i],asOf));
   baselineSpend=baseline.reduce((s,r)=>s+r.spend,0);
  }
@@ -30,9 +30,9 @@ export function optimizePortfolio(items:Opportunity[], budget:number, risk:numbe
  const choices:Choice[][]=items.map(item=>{
   const found:Choice[]=[{qty:0,cost:0,value:0}];
   if(timingFor(item,asOf).expired)return found;
-  const maxQty=Math.min(item.capacity,Math.floor(budget/item.buy));
-  for(let qty=1;qty<=maxQty;qty++){
-   const cost=item.buy*qty;
+  const maxQty=Math.min(item.capacity,Math.floor((budget-(item.fixedOrderFee??0))/item.buy));
+  for(let qty=minimumPurchase(item);qty<=maxQty;qty++){
+   const cost=purchaseCost(item,qty);
    const value=bestAtQuantity(item,qty,risk).objective;
    if(value>0)found.push({qty,cost,value});
   }
@@ -60,7 +60,7 @@ export function optimizePortfolio(items:Opportunity[], budget:number, risk:numbe
  for(let i=items.length-1;i>=0;i--){
   const qty=choiceLayers[i][bestSlot];
   if(qty<0)throw new Error('Portfolio reconstruction failed');
-  quantities[i]=qty;bestSlot-=Math.ceil((qty*items[i].buy)/step);
+  quantities[i]=qty;bestSlot-=Math.ceil(purchaseCost(items[i],qty)/step);
  }
  const candidate=items.map((item,i)=>planRow(item,quantities[i],bestAtQuantity(item,quantities[i],risk),timingFor(item,asOf)));
  const candidateObjective=candidate.reduce((s,r)=>s+r.objective,0);

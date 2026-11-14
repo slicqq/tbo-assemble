@@ -1,5 +1,5 @@
 /** Deterministic illustrative model. Not calibrated to TBO data. */
-export type Opportunity = { id:string; name:string; destination:string; kind:'Hotel'|'Flight'; period:string; buy:number; referencePrice:number; capacity:number; bookings:number; searches:number; conversion:number; seasonal:number; signal:number; cancellations:number; volatility:number; soldOut:number; integration:string; timing:string; existingStock?:number; recoveryPct?:number; previousBuy?:number; quoteExpiry?:string; previousBookings?:number; previousSearches?:number };
+export type Opportunity = { id:string; name:string; destination:string; kind:'Hotel'|'Flight'; period:string; buy:number; referencePrice:number; capacity:number; bookings:number; searches:number; conversion:number; seasonal:number; signal:number; cancellations:number; volatility:number; soldOut:number; integration:string; timing:string; existingStock?:number; recoveryPct?:number; previousBuy?:number; quoteExpiry?:string; previousBookings?:number; previousSearches?:number; minOrderUnits?:number; fixedOrderFee?:number };
 export const opportunities: Opportunity[] = [
  {id:'goa',quoteExpiry:'2026-11-18',previousBuy:6900,previousBookings:108,previousSearches:2650,existingStock:12,recoveryPct:.15,name:'North Goa beach hotels',destination:'Goa',kind:'Hotel',period:'Dec 2026',buy:6400,referencePrice:9200,capacity:160,bookings:125,searches:3100,conversion:.045,seasonal:1.18,signal:1.08,cancellations:.12,volatility:.28,soldOut:24,integration:'Direct contract',timing:'Buy now'},
  {id:'dubai',quoteExpiry:'2026-12-10',previousBuy:7300,previousBookings:90,previousSearches:2450,existingStock:5,recoveryPct:.2,name:'Dubai city hotels',destination:'Dubai',kind:'Hotel',period:'Jan 2027',buy:8200,referencePrice:11700,capacity:135,bookings:102,searches:2500,conversion:.046,seasonal:1.12,signal:1.06,cancellations:.1,volatility:.24,soldOut:18,integration:'Supplier API',timing:'Buy now'},
@@ -27,13 +27,15 @@ export function trendFactor(o:Opportunity) {
  return Math.max(.8,Math.min(1.2,1+bookingChange+searchChange));
 }
 export function forecast(o:Opportunity) { return Math.max(0, (o.bookings*.55 + o.searches*o.conversion*.45)*trendFactor(o)*o.seasonal*o.signal*(1+o.soldOut/100*.2)*(1-o.cancellations)); }
+export function purchaseCost(o:Opportunity,qty:number){return qty>0?qty*o.buy+(o.fixedOrderFee??0):0;}
+export function minimumPurchase(o:Opportunity){return o.minOrderUnits??1;}
 const scenarios = [{mult:-1,prob:.25},{mult:0,prob:.5},{mult:1,prob:.25}];
 export function evaluateAtPrice(o:Opportunity, qty:number, price:number, risk:number) {
  const f=Math.max(0,forecast(o)*Math.pow(price/o.referencePrice,-1.2)-(o.existingStock||0)); // illustrative constant elasticity
  const sold=scenarios.map(s=>Math.min(qty,Math.max(0,f*(1+s.mult*o.volatility))));
  const expectedSold=sold.reduce((a,x,i)=>a+x*scenarios[i].prob,0);
  const salvage=o.buy*(o.recoveryPct||0);
- const profits=sold.map(n=>n*price+(qty-n)*salvage-qty*o.buy);
+ const profits=sold.map(n=>n*price+(qty-n)*salvage-purchaseCost(o,qty));
  const expectedProfit=profits.reduce((sum,p,i)=>sum+p*scenarios[i].prob,0);
  const downsideProfit=profits[0], baseProfit=profits[1], upsideProfit=profits[2];
  const expectedUnsold=qty-expectedSold, unsoldExposure=expectedUnsold*(o.buy-salvage);
@@ -48,10 +50,10 @@ export function bestAtQuantity(o:Opportunity,qty:number,risk:number) {
 export function createGreedyPlan(items:Opportunity[], budget:number, risk:number, options:PlanOptions={}):PlanRow[] {
  const asOf=options.asOf || new Date().toISOString().slice(0,10);
  const state=items.map(o=>({o,qty:0,calc:bestAtQuantity(o,0,risk), timing:timingFor(o,asOf)})); let remaining=Math.max(0,budget);
- // Marginal return per rupee heuristic, not a globally optimal knapsack solver.
- while(true) { let chosen=-1, bestRatio=0, next:ReturnType<typeof bestAtQuantity>|null=null;
-  state.forEach((s,i)=>{if(s.timing.expired || s.qty>=s.o.capacity || s.o.buy>remaining)return; const n=bestAtQuantity(s.o,s.qty+1,risk);const ratio=(n.objective-s.calc.objective)/s.o.buy;if(ratio>bestRatio+1e-9){chosen=i;bestRatio=ratio;next=n;}});
-  if(chosen<0 || !next)break; state[chosen].qty++;state[chosen].calc=next;remaining-=state[chosen].o.buy;
+ // Start at the supplier minimum, then add one unit at a time.
+ while(true) { let chosen=-1, bestRatio=0, next:ReturnType<typeof bestAtQuantity>|null=null, nextQty=0,increment=0;
+  state.forEach((s,i)=>{const q=s.qty===0?minimumPurchase(s.o):s.qty+1;const cost=purchaseCost(s.o,q)-purchaseCost(s.o,s.qty);if(s.timing.expired || q>s.o.capacity || cost>remaining)return;const n=bestAtQuantity(s.o,q,risk);const ratio=(n.objective-s.calc.objective)/cost;if(ratio>bestRatio+1e-9){chosen=i;bestRatio=ratio;next=n;nextQty=q;increment=cost;}});
+  if(chosen<0 || !next)break;state[chosen].qty=nextQty;state[chosen].calc=next;remaining-=increment;
  }
  return state.map(({o,qty,calc,timing})=>planRow(o,qty,calc,timing));
 }
@@ -60,5 +62,5 @@ export function planRow(o:Opportunity,qty:number,calc:ReturnType<typeof bestAtQu
  const safePrebuy=qty>0 && calc.expectedSold/qty>=.8 && calc.downsideProfit>=0;
  const strategy=timing.expired?'Refresh supplier quote':qty===0?'Integrate / monitor':safePrebuy?'Consider pre-buy':'Negotiate flexible supply';
  const strategyReason=timing.expired?'Expired quotes cannot be allocated.':qty===0?'No units selected under the current budget and assumptions.':safePrebuy?'Expected sell-through ≥80% and low-scenario profit is non-negative.':'Downside or unsold exposure suggests flexible terms; review manually.';
- return {...o,forecast:forecast(o),qty,spend:qty*o.buy,...calc,purchaseTiming:timing.purchaseTiming,timingReason:timing.timingReason,strategy,strategyReason};
+ return {...o,forecast:forecast(o),qty,spend:purchaseCost(o,qty),...calc,purchaseTiming:timing.purchaseTiming,timingReason:timing.timingReason,strategy,strategyReason};
 }

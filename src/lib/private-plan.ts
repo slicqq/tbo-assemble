@@ -1,7 +1,7 @@
 import { columns, optionalColumns, readInventoryCSV } from './inventory-csv';
 import type { Opportunity } from './procurement';
 
-export const PLAN_MODEL_VERSION = 'scenario-grid-v3';
+export const PLAN_MODEL_VERSION = 'scenario-grid-v4';
 export type PlanInput = { items: Opportunity[]; budget: number; risk: number; asOf: string; source: 'synthetic' | 'uploaded' };
 
 // Treat even persisted JSON as untrusted. Reuse the import validation and limits
