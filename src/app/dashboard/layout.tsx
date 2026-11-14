@@ -18,7 +18,7 @@ export default function DashboardLayout({
       </a>
       <div className="flex h-dvh bg-background">
         <Sidebar />
-        <main id="main-content" className="flex-1 overflow-auto">
+        <main id="main-content" className="min-w-0 flex-1 overflow-auto">
           <div className="mx-auto max-w-[1400px] p-4 pt-16 lg:p-8">
             <PageTransition>{children}</PageTransition>
           </div>

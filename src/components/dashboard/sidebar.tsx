@@ -33,6 +33,7 @@ import {
   ShieldAlert,
   FlaskConical,
   Database,
+  Ticket,
 } from "lucide-react";
 
 const navigation = [
@@ -41,6 +42,7 @@ const navigation = [
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
   { name: "Flight Predictions", href: "/dashboard/flight-predictions", icon: Plane, description: "Flight demand and fare predictions" },
+  { name: "Fare Forecast", href: "/dashboard/fare-forecast", icon: Ticket, description: "Seven-day fare estimate and price history" },
   { name: "Hotel Demand", href: "/dashboard/hotel-demand", icon: Hotel, description: "Historical hotel booking demand forecasts" },
   { name: "India Travel Data", href: "/dashboard/india-market", icon: Database, description: "Indian route traffic and collected fare observations" },
   { name: "Travel Prediction Lab", href: "/dashboard/travel-prediction", icon: FlaskConical, description: "Public-data research and historical forecasts" },
@@ -130,25 +132,25 @@ export default function Sidebar() {
 
   const itemCls = (active: boolean) =>
     cn(
-      "group flex h-8 items-center gap-2.5 rounded-md px-2 text-sm transition-colors",
+      "group relative flex min-h-11 items-center gap-3 rounded-lg px-3 text-[14px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
       active
-        ? "bg-sidebar-accent font-medium text-foreground"
+        ? "bg-sidebar-accent font-semibold text-foreground before:absolute before:inset-y-2.5 before:left-0 before:w-[3px] before:rounded-full before:bg-brand"
         : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground"
     );
 
   const sidebarContent = (
     <>
       {/* Brand */}
-      <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
+      <div className="flex h-[76px] shrink-0 items-center gap-3 border-b border-sidebar-border px-5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="" className="size-7" />
+        <img src="/logo.svg" alt="" className="size-9 shrink-0" />
         <div className="min-w-0 leading-tight">
-          <p className="text-sm font-semibold tracking-tight">TBO Assemble</p>
-          <p className="text-[11px] text-muted-foreground">Group Travel OS</p>
+          <p className="text-[15px] font-semibold tracking-tight">TBO Assemble</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Group Travel OS</p>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-4 py-5" aria-label="Main navigation">
         {eventId && (
           <Link href="/dashboard" className="mb-4 flex h-8 items-center gap-2 rounded-full px-2 text-sm text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground">
             <ArrowLeft className="size-4" />
@@ -156,9 +158,9 @@ export default function Sidebar() {
           </Link>
         )}
 
-        <p className="mb-1 px-2 text-xs font-medium text-muted-foreground">Workspace</p>
-        <ul className="space-y-0.5">
-          {navigation.map((item) => {
+        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workspace</p>
+        <ul className="space-y-1">
+          {navigation.slice(0, 4).map((item) => {
             const isActive = pathname === item.href;
             return (
               <li key={item.name}>
@@ -169,7 +171,7 @@ export default function Sidebar() {
                   title={item.description}
                   className={itemCls(isActive)}
                 >
-                  <item.icon className="size-4 shrink-0" />
+                  <item.icon className="size-[18px] shrink-0" />
                   <span className="flex-1 truncate">{item.name}</span>
                   {item.shortcut && (
                     <kbd className="hidden rounded border bg-background px-1 font-mono text-[10px] text-muted-foreground lg:inline-block">
@@ -182,9 +184,24 @@ export default function Sidebar() {
           })}
         </ul>
 
+        <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Travel intelligence</p>
+        <ul className="space-y-1">
+          {navigation.slice(4).map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <li key={item.name}>
+                <Link href={item.href} onClick={() => setMobileOpen(false)} aria-current={isActive ? "page" : undefined} title={item.description} className={itemCls(isActive)}>
+                  <item.icon className="size-[18px] shrink-0" />
+                  <span className="min-w-0 flex-1">{item.name}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+
         {eventId && (
           <>
-            <p className="mb-1 mt-6 px-2 text-xs font-medium text-muted-foreground">Event</p>
+            <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Event</p>
             <ul className="space-y-0.5">
               {eventNavigation.map((item) => {
                 const href = `/dashboard/events/${eventId}${item.href}`;
@@ -198,7 +215,7 @@ export default function Sidebar() {
                       title={item.description}
                       className={itemCls(isActive)}
                     >
-                      <item.icon className="size-4 shrink-0" />
+                      <item.icon className="size-[18px] shrink-0" />
                       <span className="truncate">{item.name}</span>
                     </Link>
                   </li>
@@ -210,7 +227,7 @@ export default function Sidebar() {
       </nav>
 
       {/* User */}
-      <div className="border-t border-sidebar-border p-3">
+      <div className="shrink-0 border-t border-sidebar-border p-4">
         <div className="flex items-center gap-2.5 rounded-md px-1 py-1">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-orange-600 text-xs font-semibold text-white">
             {user?.name ? user.name.split(" ").map(n => n[0]).join("") : "U"}
@@ -229,7 +246,7 @@ export default function Sidebar() {
                 key={a.label}
                 onClick={a.onClick}
                 disabled={a.label === "Reset Demo Data" && resetting}
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50"
+                className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50"
                 title={a.label}
                 aria-label={a.label}
               >
@@ -249,6 +266,8 @@ export default function Sidebar() {
         onClick={() => setMobileOpen(true)}
         className="fixed left-4 top-3 z-50 flex size-9 items-center justify-center rounded-md border bg-background shadow-xs lg:hidden"
         aria-label="Open navigation menu"
+        aria-expanded={mobileOpen}
+        aria-controls="mobile-navigation"
       >
         <Menu className="size-4" />
       </button>
@@ -258,14 +277,17 @@ export default function Sidebar() {
       )}
 
       <aside
+        id="mobile-navigation"
+        aria-hidden={!mobileOpen}
+        inert={!mobileOpen}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-sidebar-border bg-sidebar transition-transform lg:hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(19rem,85vw)] flex-col border-r border-sidebar-border bg-sidebar shadow-xl transition-transform lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         <button
           onClick={() => setMobileOpen(false)}
-          className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-md hover:bg-sidebar-accent"
+          className="absolute right-3 top-[22px] flex size-8 items-center justify-center rounded-md hover:bg-sidebar-accent"
           aria-label="Close navigation menu"
         >
           <X className="size-4 text-muted-foreground" />
@@ -273,7 +295,7 @@ export default function Sidebar() {
         {sidebarContent}
       </aside>
 
-      <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex" data-tour="sidebar">
+      <aside className="hidden h-dvh w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex" data-tour="sidebar">
         {sidebarContent}
       </aside>
     </>
