@@ -1,0 +1,20 @@
+# Seven-day fare forecast: experimental pilot
+
+## What this forecasts
+The lowest cached INR route fare returned by Travelpayouts on day t+7 for the **same route, direction and departure date**, starting from the lowest result observed on day t. It is not a prediction for an identified flight or a bookable fare, or of demand. Provider results can be stale or incomplete; the cheapest flight can change, and cabin and fare-family consistency are not independently verified. Empty and error responses are not zero. UTC calendar days are used throughout.
+
+## Findings from public data research
+- [Airfare ML](https://www.kaggle.com/datasets/yashdharme36/airfare-ml-predicting-flight-fares/data): 452,088 Indian records; the uploader declares CC0. Inspection shows `Date_of_journey - Days_left` is 2023-01-15 for every row. Only one inferred observation date, so there are **zero seven-day pairs**. The inference assumes Days_left is correctly defined. Old observations do not establish 2026 performance.
+- [EaseMyTrip 2020 sample](https://www.kaggle.com/datasets/promptcloud/easemytrip-flight-fare-details-2020): 30,024 rows; only three observation dates (1 January, 13 January and 1 February), with no seven-day separation.
+- [Flight Prices by date](https://www.kaggle.com/datasets/juhyounglee1127/flight-prices): US fares, 27 June–3 July 2024: seven dates span only six days, therefore no exact seven-day pairs. It is not Indian-market data.
+The app does not train the seven-day model on these mismatched datasets.
+
+## Accumulating comparable data
+The existing daily collector already checks 1, 7 and 30 days ahead. A **disabled-by-default** pilot adds a +23-day check. If enabled, a +30 check on day t and +23 check seven UTC days later cover the same departure date. There can be at most one such pair per route per day, and empty responses, collector errors, missed cron runs and changing offers reduce coverage. Vercel Hobby cron is not exact to the minute. Pairs are made only between successful results; the snapshots need not represent identical flights. Historical collection time is not the provider's original search time.
+
+Before enabling: obtain permission for historical storage and the intended use from Travelpayouts, including retention limits, and check the Vercel and Supabase plan terms. Set `FARE_HISTORY_PILOT_ENABLED=true` in the production environment and redeploy only after confirmation. There is currently no automatic retention expiry. The application does not enable the additional collection itself. The existing collector is unchanged except for this optional flag.
+
+## Model and validation
+The server recalculates a per-route regularised linear regression of future minimum fare on the current minimum fare using the latest 180 UTC days of observed data. No news, weather, passenger counts or old Kaggle fares are silently fed into it. Test start dates are the last 25% of distinct pair-start days; training pairs must have their seven-day labels available strictly before the test begins. It requires at least 20 distinct pair-start days, 40 training pairs and 12 test pairs. These are minimums, not a guarantee of statistical reliability. Reports mean absolute error in INR for the model and the unchanged-fare baseline. A forecast is withheld if the model does not beat that baseline. After passing, the model is refit on all available pairs.
+
+Forecasts are deliberately limited to a +30-day departure observed today UTC to match training. A forecast also requires the current cached fare to have a provider found timestamp within 24 hours and a known future expiry. These safeguards can result in no forecast. The historical paired cached results can still be old or selected by the provider, and historical evaluation does not eliminate sample bias, route changes, or product inconsistency. This is research software, not a purchasing signal or a guaranteed price; no inventory or purchase is automated.

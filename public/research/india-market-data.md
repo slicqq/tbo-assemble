@@ -23,3 +23,5 @@ Travelpayouts recommends caching its Data API for 24 hours; their documentation 
 - Run the migration in `docs/india-market-migration.sql` against the same database referenced by `DATABASE_URL` before the job runs. Supabase row-level security is enabled; direct server PostgreSQL access must use an authorized role.
 - Vercel reads the cron schedule from `vercel.json`. The first scheduled run can take a day; an authorized operator can invoke the cron route once to seed it. Monitor collector and database errors; the page displays empty/error states rather than invented prices.
 - India traffic comes from the public GitHub source at request time; no paid API is required. Vercel Hobby and Supabase free tiers have usage and eligibility limits. This is not a guarantee of zero cost in production.
+
+A disabled-by-default seven-day matching pilot optionally adds a +23-day check when `FARE_HISTORY_PILOT_ENABLED=true`. Confirm provider retention rights before enabling it. See [seven-day fare methodology](/research/seven-day-fares.md). The existing collector still retains its original observations; the pilot setting does not change or delete them.
