@@ -44,15 +44,15 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string; lab
 export function CalendarView({ events, onEventClick }: CalendarViewProps) {
   const today = new Date();
   const router = useRouter();
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(today.getUTCMonth());
+  const [currentYear, setCurrentYear] = useState(today.getUTCFullYear());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   const firstDay = new Date(currentYear, currentMonth, 1).getDay();
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const prevMonthDays = new Date(currentYear, currentMonth, 0).getDate();
 
-  const isCurrentMonth = currentMonth === today.getMonth() && currentYear === today.getFullYear();
+  const isCurrentMonth = currentMonth === today.getUTCMonth() && currentYear === today.getUTCFullYear();
 
   const goPrev = () => {
     if (currentMonth === 0) {
@@ -75,8 +75,8 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
   };
 
   const goToday = () => {
-    setCurrentMonth(today.getMonth());
-    setCurrentYear(today.getFullYear());
+    setCurrentMonth(today.getUTCMonth());
+    setCurrentYear(today.getUTCFullYear());
     setSelectedDay(null);
   };
 
@@ -84,13 +84,9 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
   const eventsByDay = useMemo(() => {
     const map = new Map<number, CalendarEvent[]>();
     for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(currentYear, currentMonth, day);
       const dayEvents = events.filter((e) => {
-        const checkIn = new Date(e.checkIn);
-        const checkOut = new Date(e.checkOut);
-        checkIn.setHours(0, 0, 0, 0);
-        checkOut.setHours(23, 59, 59, 999);
-        return date >= checkIn && date <= checkOut;
+        const dayKey = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        return dayKey >= e.checkIn.slice(0, 10) && dayKey < e.checkOut.slice(0, 10);
       });
       if (dayEvents.length > 0) map.set(day, dayEvents);
     }
@@ -128,7 +124,7 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
   // Current month days
   for (let day = 1; day <= daysInMonth; day++) {
     const dayEvents = eventsByDay.get(day) || [];
-    const isToday = day === today.getDate() && isCurrentMonth;
+    const isToday = day === today.getUTCDate() && isCurrentMonth;
     const isSelected = day === selectedDay;
     const isWeekend = (firstDay + day - 1) % 7 === 0 || (firstDay + day - 1) % 7 === 6;
 
@@ -177,11 +173,10 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
         {/* Event pills */}
         <div className="space-y-0.5">
           {dayEvents.slice(0, 2).map((event) => {
-            const checkIn = new Date(event.checkIn);
-            const checkOut = new Date(event.checkOut);
-            const currentDate = new Date(currentYear, currentMonth, day);
-            const isStart = checkIn.toDateString() === currentDate.toDateString();
-            const isEnd = checkOut.toDateString() === currentDate.toDateString();
+            const dayKey = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const lastNight = new Date(Date.parse(event.checkOut.slice(0, 10) + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
+            const isStart = event.checkIn.slice(0, 10) === dayKey;
+            const isEnd = lastNight === dayKey;
 
             return (
               <button
@@ -196,7 +191,7 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
                   borderLeft: isStart ? `2px solid ${event.primaryColor || "#3b82f6"}` : undefined,
                 }}
               >
-                {isStart ? event.name : ""}
+                {event.name}
               </button>
             );
           })}

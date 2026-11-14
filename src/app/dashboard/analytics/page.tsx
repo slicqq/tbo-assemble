@@ -34,15 +34,7 @@ export default async function AnalyticsPage() {
       (g) => g.status === "confirmed"
     ).length;
 
-    const nights = Math.ceil(
-      (new Date(event.checkOut).getTime() -
-        new Date(event.checkIn).getTime()) /
-        (1000 * 60 * 60 * 24)
-    );
-    const revenue = event.roomBlocks.reduce(
-      (s, rb) => s + rb.bookings.filter((b: { status?: string }) => b.status !== "cancelled").length * rb.rate * nights,
-      0
-    );
+    const revenue = event.bookings.filter(b => b.status !== "cancelled").reduce((sum, b) => sum + b.totalAmount, 0);
 
     return {
       id: event.id,
@@ -72,7 +64,7 @@ export default async function AnalyticsPage() {
             Analytics
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Compare performance across all your events
+            Compare events. Recorded booking amounts exclude cancelled bookings; they are not profit or cash collected.
           </p>
         </div>
         <PdfExportButton events={comparisons} />

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { summarizeEvent } from "@/lib/dashboard-metrics";
 
 // GET - Search events
 export async function GET(request: Request) {
@@ -34,30 +35,13 @@ export async function GET(request: Request) {
       where,
       include: {
         roomBlocks: true,
-        guests: { select: { id: true, status: true } },
-        bookings: { select: { id: true, totalAmount: true } },
+        guests: { select: { id: true, status: true, name: true } },
+        bookings: { select: { id: true, totalAmount: true, status: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // Add computed stats
-    const results = events.map((event) => ({
-      id: event.id,
-      name: event.name,
-      slug: event.slug,
-      type: event.type,
-      status: event.status,
-      venue: event.venue,
-      location: event.location,
-      checkIn: event.checkIn,
-      checkOut: event.checkOut,
-      primaryColor: event.primaryColor,
-      totalRooms: event.roomBlocks.reduce((s, r) => s + r.totalQty, 0),
-      bookedRooms: event.roomBlocks.reduce((s, r) => s + r.bookedQty, 0),
-      guestCount: event.guests.length,
-      confirmedGuests: event.guests.filter((g) => g.status === "confirmed").length,
-      totalRevenue: event.bookings.reduce((s, b) => s + b.totalAmount, 0),
-    }));
+    const results = events.map(summarizeEvent);
 
     return NextResponse.json(results);
   } catch (error) {

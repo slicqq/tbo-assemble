@@ -2,7 +2,7 @@ import Link from "next/link";
 import prisma from "@/lib/db";
 import { ArrowLeft, CalendarDays, MapPin, Users } from "lucide-react";
 import { CalendarView } from "@/components/dashboard/calendar-view";
-import { formatDate } from "@/lib/utils";
+import { formatStayDate, utcDaysUntil } from "@/lib/dashboard-metrics";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +38,7 @@ export default async function CalendarPage() {
 
   // Upcoming events (sorted by check-in)
   const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const upcoming = calendarEvents
-    .filter((e) => new Date(e.checkIn) >= todayStart);
+  const upcoming = calendarEvents.filter(e => ["active", "published"].includes(e.status) && utcDaysUntil(e.checkIn, now) >= 0);
 
   return (
     <div>
@@ -56,13 +53,13 @@ export default async function CalendarPage() {
             Event Calendar
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Visualize all your events across time — {calendarEvents.length} event{calendarEvents.length !== 1 ? "s" : ""} total
+            Visualize all your events across time — {calendarEvents.length} event{calendarEvents.length !== 1 ? "s" : ""} total · UTC calendar dates, checkout exclusive
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40">
             <CalendarDays className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-            <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">{upcoming.length} upcoming</span>
+            <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">{upcoming.length} upcoming active/published</span>
           </div>
         </div>
       </div>
@@ -72,7 +69,7 @@ export default async function CalendarPage() {
         <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {upcoming.slice(0, 4).map((event) => {
-            const daysAway = Math.ceil((new Date(event.checkIn).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            const daysAway = utcDaysUntil(event.checkIn, now);
             return (
               <Link
                 key={event.id}
@@ -94,7 +91,7 @@ export default async function CalendarPage() {
                 <div className="space-y-1">
                   <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                     <CalendarDays className="h-3 w-3 shrink-0" />
-                    {formatDate(new Date(event.checkIn))}
+                    {formatStayDate(event.checkIn)}
                   </p>
                   <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 truncate">
                     <MapPin className="h-3 w-3 shrink-0" />

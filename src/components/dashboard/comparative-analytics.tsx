@@ -94,9 +94,9 @@ export function ComparativeAnalytics({ events }: ComparativeAnalyticsProps) {
 
   const stats = [
     { label: "Total Guests", value: totalGuests.toLocaleString(), icon: Users, color: "text-blue-600 dark:text-blue-400" },
-    { label: "Total Revenue", value: `₹${(totalRevenue / 100000).toFixed(1)}L`, icon: DollarSign, color: "text-green-600 dark:text-green-400" },
-    { label: "Avg Occupancy", value: `${avgOccupancy.toFixed(0)}%`, icon: Bed, color: "text-amber-600 dark:text-amber-400" },
-    { label: "Avg Conversion", value: `${avgConversion.toFixed(0)}%`, icon: TrendingUp, color: "text-purple-600 dark:text-purple-400" },
+    { label: "Booking amount", value: `₹${(totalRevenue / 100000).toFixed(1)}L`, icon: DollarSign, color: "text-green-600 dark:text-green-400" },
+    { label: "Avg event occupancy", value: `${avgOccupancy.toFixed(0)}%`, icon: Bed, color: "text-amber-600 dark:text-amber-400" },
+    { label: "Avg guest confirmation", value: `${avgConversion.toFixed(0)}%`, icon: TrendingUp, color: "text-purple-600 dark:text-purple-400" },
   ];
 
   return (
@@ -173,7 +173,7 @@ export function ComparativeAnalytics({ events }: ComparativeAnalyticsProps) {
                 </>
               )}
               {metric === "revenue" && (
-                <Bar dataKey="revenue" fill="#ea580c" name="Revenue (₹)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="revenue" fill="#ea580c" name="Booking amount (₹)" radius={[4, 4, 0, 0]} />
               )}
               {metric === "occupancy" && (
                 <Bar dataKey="occupancy" fill="#ea580c" name="Occupancy %" radius={[4, 4, 0, 0]} />
@@ -185,7 +185,7 @@ export function ComparativeAnalytics({ events }: ComparativeAnalyticsProps) {
         {/* Pie Chart */}
         <div className="bg-card rounded-xl border border-border p-4">
           <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-4">
-            Distribution by {metric}
+            Distribution by {metric}{metric === "occupancy" ? " (share of summed event percentages, not rooms)" : ""}
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
