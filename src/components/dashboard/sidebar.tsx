@@ -34,6 +34,7 @@ import {
   FlaskConical,
   Database,
   Ticket,
+  PackageSearch,
 } from "lucide-react";
 
 const navigation = [
@@ -41,6 +42,7 @@ const navigation = [
   { name: "Create Event", href: "/dashboard/onboarding", icon: Sparkles, description: "AI-powered setup", shortcut: "Alt+N" },
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
+  { name: "Inventory Planner", href: "/inventory", icon: PackageSearch, description: "Procurement opportunities and budget planning" },
   { name: "Flight Predictions", href: "/dashboard/flight-predictions", icon: Plane, description: "Flight demand and fare predictions" },
   { name: "Fare Forecast", href: "/dashboard/fare-forecast", icon: Ticket, description: "Seven-day fare estimate and price history" },
   { name: "Hotel Demand", href: "/dashboard/hotel-demand", icon: Hotel, description: "Historical hotel booking demand forecasts" },
@@ -199,6 +201,16 @@ export default function Sidebar() {
           })}
         </ul>
 
+        {pathname === "/inventory" && (
+          <>
+            <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">On this page</p>
+            <ul className="space-y-1">{[
+              ["Strategy & budget", "#allocation"], ["Demand outlook", "#forecast"],
+              ["Market context", "#live-market"], ["Opportunities", "#opportunities"],
+            ].map(([label, href]) => <li key={href}><a href={href} onClick={() => setMobileOpen(false)} className="flex min-h-10 items-center rounded-lg px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground">{label}</a></li>)}</ul>
+          </>
+        )}
+
         {eventId && (
           <>
             <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Event</p>
@@ -233,15 +245,15 @@ export default function Sidebar() {
             {user?.name ? user.name.split(" ").map(n => n[0]).join("") : "U"}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-sm font-medium">{user?.name || "User"}</p>
-            <p className="truncate text-xs text-muted-foreground">{user?.role || "TBO Travel Solutions"}</p>
+            <p className="truncate text-sm font-medium">{user?.name || "Demo workspace"}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.role || "Public demo"}</p>
           </div>
           <div className="flex items-center">
-            {[
+            {(user ? [
               { label: "Keyboard shortcuts (?)", icon: HelpCircle, onClick: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "?" })), spin: false },
               { label: "Reset Demo Data", icon: RotateCcw, onClick: handleDemoReset, spin: resetting },
               { label: "Sign out", icon: LogOut, onClick: () => { logout(); router.push("/login"); }, spin: false },
-            ].map((a) => (
+            ] : []).map((a) => (
               <button
                 key={a.label}
                 onClick={a.onClick}

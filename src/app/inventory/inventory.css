@@ -1,0 +1,135 @@
+/* Inventory planner uses the same neutral surfaces and scale as the Dashboard. */
+.inventory-page {
+  min-height: 100%; background: var(--background); color: var(--foreground);
+  font-family: var(--font-geist-sans), sans-serif; font-size: 14px;
+}
+.inventory-page .content { max-width: 1400px; margin: 0 auto; padding: calc(4.75rem + env(safe-area-inset-top)) 1rem 3rem; }
+.inventory-page .heading { gap: 16px; margin-bottom: 22px; flex-wrap: wrap; align-items: center; }
+.inventory-page .heading h1 { font-size: 2rem; line-height: 1.15; letter-spacing: -.03em; margin: 0 0 6px; }
+.inventory-page .heading p { font-size: 15px; line-height: 1.5; color: var(--muted-foreground); }
+.inventory-page .inventory-jump { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.inventory-page .inventory-jump a { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 13px; border: 1px solid var(--border); border-radius: 10px; color: var(--foreground); text-decoration: none; font-size: 12px; font-weight: 600; background: var(--card); }
+.inventory-page .inventory-jump a:hover { background: var(--accent); }
+.inventory-page .panel, .inventory-page .metric, .inventory-page .control-panel { background: var(--card); border: 1px solid var(--border); border-radius: 18px; box-shadow: none; }
+.inventory-page .control-panel, .inventory-page .chart-panel, .inventory-page .mix-panel, .inventory-page .scenario-panel, .inventory-page .live-card { padding: 24px; }
+.inventory-page .control-title h2, .inventory-page .panel h2, .inventory-page .section-heading h2, .inventory-page .import-copy h2 { font-family: var(--font-iosevka), sans-serif; color: var(--foreground); font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
+.inventory-page .heading p, .inventory-page .section-heading p, .inventory-page .panel-head p, .inventory-page .control-title p, .inventory-page .import-copy p, .inventory-page .live-card-title p { color: var(--muted-foreground); font-size: 13px; line-height: 1.55; }
+.inventory-page .notice { border: 1px solid var(--border); border-radius: 14px; background: var(--secondary); color: var(--muted-foreground); font-size: 13px; line-height: 1.55; padding: 15px 16px; align-items: flex-start; }
+.inventory-page .notice strong { color: var(--foreground); }
+.inventory-page .notice > svg { color: var(--foreground); margin-top: 2px; }
+.inventory-page .notice button, .inventory-page .ghost, .inventory-page .flight-link-banner a { color: var(--brand); font-size: 12px; }
+.inventory-page .outline-button, .inventory-page .import-button, .inventory-page .budget-input button, .inventory-page .api-check button { min-height: 44px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.inventory-page .outline-button { color: var(--foreground); background: var(--card); border-color: var(--border); }
+.inventory-page .outline-button:hover { background: var(--accent); }
+.inventory-page .import-button, .inventory-page .api-check button { background: var(--foreground); color: var(--background); }
+.inventory-page .import-panel { padding: 22px 24px; }
+.inventory-page .import-copy { min-width: 0; }
+.inventory-page .import-copy a, .inventory-page .source-note a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+.inventory-page .control-icon, .inventory-page .mini-icon, .inventory-page .metric-icon, .inventory-page .inventory-icon { background: var(--secondary); color: var(--foreground); border-radius: 12px; width: 40px; height: 40px; }
+.inventory-page .controls { gap: 24px; }
+.inventory-page .field label { color: var(--muted-foreground); font-size: 11px; letter-spacing: .09em; }
+.inventory-page .field label span { color: var(--foreground); }
+.inventory-page .budget-input, .inventory-page .date-field input { height: 48px; border: 1px solid var(--input); border-radius: 10px; color: var(--foreground); background: var(--background); }
+.inventory-page .budget-input button { background: var(--foreground); color: var(--background); min-height: 38px; }
+.inventory-page .budget-input input { color: var(--foreground); }
+.inventory-page .risk-field input { accent-color: var(--brand); }
+.inventory-page .range-labels, .inventory-page .date-field small { color: var(--muted-foreground); font-size: 11px; }
+.inventory-page .section-heading { margin: 32px 0 14px; gap: 12px; }
+.inventory-page .subtle-label { color: var(--muted-foreground); font-size: 10px; }
+.inventory-page .metrics { gap: 14px; }
+.inventory-page .metric { min-height: 158px; padding: 20px; }
+.inventory-page .metric-top { font-size: 13px; color: var(--muted-foreground); gap: 8px; }
+.inventory-page .metric>strong { font-size: 28px; margin-top: 14px; color: var(--foreground); }
+.inventory-page .metric p { color: var(--muted-foreground); font-size: 12px; line-height: 1.45; }
+.inventory-page .metric p b { color: var(--foreground); }
+.inventory-page .dashboard-grid { grid-template-columns: minmax(0, 1.6fr) minmax(270px, 1fr); gap: 14px; margin-top: 16px; }
+.inventory-page .panel-head { gap: 14px; flex-wrap: wrap; }
+.inventory-page .chart-summary { gap: 12px; flex-wrap: wrap; }
+.inventory-page .legend { flex-wrap: wrap; color: var(--muted-foreground); font-size: 11px; }
+.inventory-page .legend .dot-blue { background: #e85b16; }
+.inventory-page .legend .dot-light { background: #a8a29e; }
+.inventory-page .demand-rows { display: grid; gap: 15px; margin-top: 22px; }
+.inventory-page .demand-label { display: flex; justify-content: space-between; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
+.inventory-page .demand-label strong { color: var(--foreground); font-weight: 600; }
+.inventory-page .demand-label span { white-space: nowrap; }
+.inventory-page .demand-bars { display: grid; gap: 4px; margin-top: 7px; }
+.inventory-page .demand-bar-line { display: flex; align-items: center; gap: 7px; padding-right: 40px; font-size: 11px; line-height: 1; color: var(--muted-foreground); }
+.inventory-page .demand-bar { display: inline-block; min-width: 1px; height: 6px; border-radius: 99px; flex-shrink: 0; }
+.inventory-page .demand-bar.estimate { background: #e85b16; }
+.inventory-page .demand-bar.history { background: #a8a29e; }
+.inventory-page .chart-foot { font-size: 12px; color: var(--muted-foreground); line-height: 1.5; margin-top: 20px; }
+.inventory-page .allocation-total strong, .inventory-page .signal-summary strong { color: var(--foreground); }
+.inventory-page .allocation-total span, .inventory-page .signal-summary small, .inventory-page .scenario-grid small { color: var(--muted-foreground); font-size: 11px; }
+.inventory-page .allocation-list { font-size: 13px; }
+.inventory-page .allocation-list em, .inventory-page .remaining span { color: var(--muted-foreground); }
+.inventory-page .scenario-grid>div { background: var(--secondary); border-color: var(--border); border-radius: 12px; }
+.inventory-page .scenario-grid strong { color: var(--foreground); font-size: 19px; overflow-wrap: anywhere; }
+.inventory-page .scenario-grid span, .inventory-page .scenario-note, .inventory-page .source-note, .inventory-page .live-disclaimer { color: var(--muted-foreground); font-size: 12px; line-height: 1.55; }
+.inventory-page .api-check { border-color: var(--border); border-radius: 16px; background: var(--secondary); }
+.inventory-page .api-check strong { color: var(--foreground); font-size: 14px; }
+.inventory-page .api-check p { color: var(--muted-foreground); font-size: 12px; }
+.inventory-page .flight-link-banner { border-color: var(--border); border-radius: 14px; background: var(--secondary); padding: 18px 20px; }
+.inventory-page .flight-link-banner strong { color: var(--foreground); font-size: 14px; }
+.inventory-page .flight-link-banner span { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
+.inventory-page .holiday-filters select, .inventory-page .filters select { min-height: 44px; border-radius: 10px; border-color: var(--input); background: var(--background); color: var(--foreground); font-size: 13px; }
+.inventory-page .refresh-button { width: 44px; height: 44px; border-color: var(--border); color: var(--foreground); }
+.inventory-page .live-placeholder, .inventory-page .live-error, .inventory-page .holiday-row b, .inventory-page .holiday-row time { color: var(--muted-foreground); font-size: 12px; }
+.inventory-page .opportunities { margin-top: 20px; overflow: hidden; }
+.inventory-page .opportunities .panel-head { padding: 24px; }
+.inventory-page .table-wrap { overflow-x: auto; }
+.inventory-page .table-wrap table { min-width: 900px; }
+.inventory-page .inventory-expand { color: var(--foreground); font-size: 13px; font-weight: 600; background: none; border: 0; padding: 4px 0; text-align: left; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; }
+.inventory-page .inventory-expand:hover, .inventory-page .inventory-expand:focus-visible { text-decoration-color: currentColor; }
+.inventory-page .data-row { cursor: default; }
+.inventory-page .row-open { min-width: 44px; min-height: 44px; }
+.inventory-page .table-foot { color: var(--muted-foreground); font-size: 11px; gap: 8px; flex-wrap: wrap; }
+.inventory-page .opportunity-cards { display: none; }
+.inventory-page .modal-bg { z-index: 100; padding: 16px; }
+.inventory-page .method-modal { color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: 20px; font-size: 14px; }
+.inventory-page footer { color: var(--muted-foreground); font-size: 12px; }
+.inventory-page :where(button, a, input, select):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (min-width: 1024px) { .inventory-page .content { padding: 32px 32px 48px; } }
+@media (max-width: 1023px) {
+  .inventory-page .dashboard-grid { grid-template-columns: 1fr; }
+  .inventory-page .opportunity-cards { display: grid; gap: 12px; padding: 0 20px 20px; }
+  .inventory-page .opportunities .table-wrap { display: none; }
+  .inventory-page .opportunity-card { border: 1px solid var(--border); background: var(--secondary); border-radius: 14px; padding: 16px; }
+  .inventory-page .opportunity-card-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+  .inventory-page .opportunity-card h3 { margin: 0; font-size: 14px; font-weight: 700; }
+  .inventory-page .opportunity-card p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
+  .inventory-page .opportunity-card dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin-top: 16px; }
+  .inventory-page .opportunity-card dt { color: var(--muted-foreground); font-size: 11px; }
+  .inventory-page .opportunity-card dd { color: var(--foreground); font-weight: 600; font-size: 13px; margin: 4px 0 0; overflow-wrap: anywhere; }
+  .inventory-page .card-details-button { display: flex; align-items: center; gap: 6px; color: var(--brand); background: none; border: 0; min-height: 44px; padding: 8px 0 0; font-weight: 600; font-size: 12px; }
+  .inventory-page .opportunity-details { border-top: 1px solid var(--border); padding-top: 12px; }
+}
+@media (max-width: 700px) {
+  .inventory-page .control-panel, .inventory-page .chart-panel, .inventory-page .mix-panel, .inventory-page .scenario-panel, .inventory-page .live-card, .inventory-page .import-panel { padding: 20px; }
+  .inventory-page .notice { flex-wrap: wrap; }
+  .inventory-page .notice span { flex: 1 1 calc(100% - 26px); min-width: 0; }
+  .inventory-page .notice button { margin-left: 26px; min-height: 36px; }
+  .inventory-page .controls { grid-template-columns: 1fr; }
+  .inventory-page .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .inventory-page .metric { padding: 16px; min-width: 0; }
+  .inventory-page .metric>strong { font-size: 23px; overflow-wrap: anywhere; }
+  .inventory-page .metric-top { font-size: 12px; }
+  .inventory-page .metric-icon { width: 32px; height: 32px; flex-shrink: 0; }
+  .inventory-page .scenario-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .inventory-page .scenario-grid>div { min-width: 0; }
+  .inventory-page input:not([type="range"]), .inventory-page select { font-size: 16px; max-width: 100%; }
+  .inventory-page .import-actions { width: 100%; }
+  .inventory-page .opportunities .panel-head { padding: 20px; }
+  .inventory-page .chart-summary strong { font-size: 20px; }
+}
+@media (max-width: 360px) { .inventory-page .metrics { grid-template-columns: 1fr; } }
+
+.inventory-page .chart-summary > div:first-child > span, .inventory-page .chart-summary strong small { color: var(--muted-foreground); }
+.inventory-page .opportunities th { color: var(--muted-foreground); background: var(--secondary); font-size: 10px; }
+.inventory-page .opportunities td { color: var(--foreground); border-color: var(--border); font-size: 12px; }
+.inventory-page .opportunities td strong { color: var(--foreground); font-size: 12px; }
+.inventory-page .inventory-name small, .inventory-page .cell-sub, .inventory-page .faded { color: var(--muted-foreground); font-size: 11px; }
+.inventory-page .data-row:hover { background: var(--secondary); }
+.inventory-page .method-modal h2, .inventory-page .method-modal h3 { color: var(--foreground); }
+.inventory-page .method-modal p { color: var(--muted-foreground); font-size: 13px; }
+.inventory-page .method-modal a { color: var(--brand); }
+.dark .inventory-page input[type="date"] { color-scheme: dark; }
