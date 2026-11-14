@@ -1,7 +1,7 @@
 import prisma from "@/lib/db";
 import { summarizeEvent } from "@/lib/dashboard-metrics";
 import { DashboardClient } from "@/components/dashboard/dashboard-client";
-import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { DashboardHeader, InventoryDecisionBanner } from "@/components/dashboard/dashboard-header";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ export default async function DashboardPage() {
     <div>
       <DashboardHeader />
 
+      <InventoryDecisionBanner />
       <DashboardClient initialEvents={serializedEvents} />
     </div>
   );

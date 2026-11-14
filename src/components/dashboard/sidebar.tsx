@@ -44,7 +44,7 @@ const navigation = [
   { name: "My Private Drafts", href: "/secure-account", icon: LockKeyhole, description: "Your account’s private basic event drafts" },
   { name: "Calendar", href: "/dashboard/calendar", icon: Calendar, description: "Event calendar", shortcut: "Alt+K" },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3, description: "Compare events", shortcut: "Alt+A" },
-  { name: "Inventory Planner", href: "/inventory", icon: PackageSearch, description: "Procurement opportunities and budget planning" },
+  { name: "Inventory Decisions", href: "/inventory", icon: PackageSearch, description: "Demand, procurement opportunities and budget planning" },
   { name: "Flight Predictions", href: "/dashboard/flight-predictions", icon: Plane, description: "Flight demand and fare predictions" },
   { name: "Fare Forecast", href: "/dashboard/fare-forecast", icon: Ticket, description: "Seven-day fare estimate and price history" },
   { name: "Hotel Demand", href: "/dashboard/hotel-demand", icon: Hotel, description: "Historical hotel booking demand forecasts" },

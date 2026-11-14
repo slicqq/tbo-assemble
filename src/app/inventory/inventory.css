@@ -152,3 +152,34 @@
 .inventory-page .historical-warning { margin: 14px 0; }
 .inventory-page .historical-demand > a { color: var(--brand); display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; min-height: 36px; }
 @media (max-width: 700px) { .inventory-page .historical-demand { padding: 20px; } .inventory-page .historical-metrics { grid-template-columns: 1fr; } .inventory-page .historical-controls label { flex: 1 1 140px; min-width: 0; } }
+
+/* Private input snapshots, using the same warm cards and orange accent as the dashboard. */
+.inventory-app .saved-plans{margin-top:16px;padding:20px;overflow-wrap:anywhere}
+.inventory-app .saved-plans-head{display:flex;gap:12px;align-items:flex-start}
+.inventory-app .saved-plans h2{margin:0;font-size:16px;font-weight:700}
+.inventory-app .saved-plans-head p,.inventory-app .saved-privacy,.inventory-app .saved-empty{margin:6px 0 0;color:#655f58;font-size:12px;line-height:1.6}
+.inventory-app .saved-plan-form{margin-top:16px;max-width:600px}
+.inventory-app .saved-plan-form label{display:block;font-weight:700;font-size:12px;margin-bottom:7px}
+.inventory-app .saved-plan-form>div{display:flex;gap:8px;flex-wrap:wrap}
+.inventory-app .saved-plan-form input{flex:1;min-width:180px;border:1px solid #ddd6ce;border-radius:9px;padding:10px 12px;font-size:14px;background:#fff;color:#26211d}
+.inventory-app .saved-plan-form button,.inventory-app .saved-plan-list button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:42px;border-radius:9px;padding:8px 13px;font-weight:700;font-size:12px}
+.inventory-app .saved-plan-form button{background:#27221e;color:#fff;border:1px solid #27221e}
+.inventory-app .saved-plan-form button:disabled{opacity:.5}
+.inventory-app .saved-plan-list{list-style:none;margin:15px 0 0;padding:0;border-top:1px solid #eee8e0}
+.inventory-app .saved-plan-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #eee8e0;padding:12px 0}
+.inventory-app .saved-plan-list strong,.inventory-app .saved-plan-list span{display:block}
+.inventory-app .saved-plan-list strong{font-size:13px}.inventory-app .saved-plan-list span{font-size:11px;color:#655f58;margin-top:4px}
+.inventory-app .saved-plan-list button{border:1px solid #d9d1c9;background:white;color:#29241f;flex-shrink:0}
+.inventory-app .saved-privacy{margin-top:12px}.inventory-app .saved-empty a{color:#bd450d;text-decoration:underline;font-weight:700}
+.inventory-app .saved-error,.inventory-app .saved-success{margin:12px 0 0;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5}
+.inventory-app .saved-error{background:#fff1f0;color:#a42220}.inventory-app .saved-success{background:#edf8f0;color:#28633c}
+.inventory-app .saved-plan-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.inventory-app .saved-plan-actions button:disabled{opacity:.5}
+.inventory-app .readiness-panel{padding:18px 20px;margin-bottom:16px}
+.inventory-app .readiness-panel h2{font-size:15px;font-weight:700;margin:0}
+.inventory-app .readiness-panel p{font-size:12px;line-height:1.55;color:#655f58;margin:5px 0 0}
+.inventory-app .readiness-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+.inventory-app .readiness-grid>div{background:#faf8f5;border:1px solid #eee8e0;border-radius:10px;padding:10px 12px}
+.inventory-app .readiness-grid strong,.inventory-app .readiness-grid span{display:block}
+.inventory-app .readiness-grid strong{font-size:18px;color:#26211d}.inventory-app .readiness-grid span{font-size:11px;color:#655f58;margin-top:3px;line-height:1.4}
+@media(max-width:480px){.inventory-app .readiness-grid{grid-template-columns:1fr}.inventory-app .readiness-grid>div{display:flex;align-items:center;gap:10px}.inventory-app .readiness-grid span{margin:0}}
