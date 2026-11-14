@@ -18,7 +18,12 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  await client.auth.getUser();
+  try {
+    await client.auth.getUser();
+  } catch {
+    // A malformed cookie must not crash the request. Protected routes still
+    // independently verify identity; this refresh proxy never grants access.
+  }
   return response;
 }
 export const config = { matcher: ['/secure-account/:path*'] };
