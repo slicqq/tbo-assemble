@@ -1,6 +1,6 @@
 # Inventory CSV field guide
 
-Download the template from the dashboard. Its example row is synthetic. Replace it with your own data; one row represents one hotel-room-night or flight-seat product and travel period. Required column names are case-sensitive. The file is parsed in your browser; it is sent to the server only if you explicitly run the planning API, and is not saved there. Import replaces the current in-memory inputs. Reloading the page restores demo data.
+Download the template from the dashboard. Its example row is synthetic. Replace it with your own data; one row represents one hotel-room-night or flight-seat product and travel period. Required column names are case-sensitive. The file is parsed in your browser. Inputs are sent to the server if you explicitly run the planning API or save a plan to your account. The API does not persist inputs; a saved plan does. Import replaces the current in-memory inputs. Reloading the page restores demo data until you open a saved plan. Saved plans contain inputs and are recalculated on reopening; they can be deleted from the saved plans section. Email ownership is currently unverified, so do not upload sensitive data.
 
 | Field | Meaning |
 |---|---|
