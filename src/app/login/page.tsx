@@ -29,9 +29,10 @@ export default function LoginPage() {
         if (error) throw error;
         setMessage("If the address can receive auth emails, a reset link has been sent. Check your inbox.");
       } else if (mode === "signup") {
-        const { error } = await client.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: `${window.location.origin}/secure-account/callback` } });
+        const { data, error } = await client.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: `${window.location.origin}/secure-account/callback` } });
         if (error) throw error;
-        setMessage("If registration is available, check your email for a confirmation link, then sign in.");
+        if (data.session) { router.replace("/secure-account"); router.refresh(); }
+        else setMessage("If registration is available, check your email for a confirmation link, then sign in.");
       } else {
         const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
@@ -40,7 +41,7 @@ export default function LoginPage() {
     } catch (error) {
       const code = (error as { code?: string }).code;
       setIsError(true);
-      setMessage(code === "email_address_not_authorized" ? "This address cannot receive email from the current test email service. Contact the project owner." : code === "over_email_send_rate_limit" || code === "over_request_rate_limit" ? "Too many attempts. Please wait and try again." : "Unable to continue. Check your details and try again.");
+      setMessage(code === "email_address_not_authorized" ? "This address cannot receive email from the current test email service. Contact the project owner." : code === "over_email_send_rate_limit" || code === "over_request_rate_limit" ? "Too many attempts. Please wait and try again." : code === "invalid_credentials" ? "Incorrect email or password. If you haven't registered here, create an account first." : code === "email_not_confirmed" ? "Please confirm your email before signing in. Check your inbox and spam folder." : code === "user_already_exists" ? "An account may already exist. Try signing in or resetting your password." : "Unable to continue. Check your details and try again.");
     } finally { setBusy(false); }
   }
   return <main className="grid min-h-screen bg-background lg:grid-cols-2">
@@ -68,7 +69,7 @@ export default function LoginPage() {
       </form>
       <div className="mt-5 text-sm text-muted-foreground">{mode === "signin" ? <>New here? <button type="button" className="font-medium text-foreground underline-offset-4 hover:underline" onClick={()=>switchMode("signup")}>Create an account</button></> : <button type="button" className="font-medium text-foreground underline-offset-4 hover:underline" onClick={()=>switchMode("signin")}>Back to sign in</button>}</div>
       <div className="mt-7 rounded-xl border bg-muted/30 p-4"><p className="text-sm font-semibold">Just exploring?</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Try the inventory planner with synthetic data. No account needed.</p><Button asChild variant="outline" size="sm" className="mt-3"><Link href="/inventory">Open synthetic demo</Link></Button></div>
-      <p className="mt-5 text-xs leading-relaxed text-muted-foreground">Email confirmation is in testing and currently limited to permitted project-team addresses. <Link href="/legacy-login" className="underline">Open the old shared dashboard</Link> (not private).</p>
+      <p className="mt-5 text-xs leading-relaxed text-muted-foreground">Account preview: email verification settings may be disabled, and password recovery emails may be limited to project-team addresses. Do not add sensitive data. <Link href="/legacy-login" className="underline">Open the old shared dashboard</Link> (not private).</p>
       <Link href="/" className="mt-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" /> Back to home</Link>
     </div></div>
   </main>;
