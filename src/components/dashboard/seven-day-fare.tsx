@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {CalendarDays, ChartNoAxesCombined, Database, Clock3, ArrowUpRight} from 'lucide-react';
 import {ROUTES} from '@/lib/india-market';
 import {FeatureHeader,FeatureMetric,FeatureNotice} from '@/components/dashboard/feature-ui';
+import SerpFareSearch from '@/components/dashboard/serp-fare-search';
 
 type Result={pairCount:number; distinctDays:number;trainCount:number;testCount:number;minimumTrain:number;minimumTest:number;minimumDays:number;firstTestDay:string|null;status:'collecting'|'baseline-better'|'no-fresh-fare'|'ready';mae:number|null;baselineMae:number|null;reason:string|null;forecast:{departureDate:string;asOf:string;targetDate:string;currentFare:number;estimatedFare:number}|null};
 type Data={pilotEnabled:boolean;result:Result};
@@ -18,6 +19,8 @@ export default function SevenDayFare(){
   <FeatureHeader title="Seven-day fare forecast" description="Experimental route-level prediction using observed fare history" status="Research pilot" actions={<a className="inline-flex items-center gap-1 text-xs font-semibold hover:text-brand" href="/research/seven-day-fares.md" target="_blank" rel="noreferrer">Methodology <ArrowUpRight className="size-3.5"/></a>}/>
   <FeatureNotice><strong className="text-foreground">Not a live price or a specific flight quote.</strong> We compare the lowest cached fare found for the same route and departure date, seven days apart. The cheapest itinerary can change.</FeatureNotice>
   <div className="mt-6 max-w-md"><label htmlFor="fare-route" className="text-sm font-medium text-muted-foreground">Route and direction</label><select id="fare-route" value={route} onChange={e=>{setData(null);setError('');setLoading(true);setRoute(e.target.value)}} className="mt-2 h-11 w-full rounded-full border border-input bg-background px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-ring/30">{ROUTES.map(x=><option key={`${x.origin}-${x.destination}`} value={`${x.origin}-${x.destination}`}>{x.from} ({x.origin}) → {x.to} ({x.destination})</option>)}</select></div>
+  <SerpFareSearch key={route} route={route}/>
+  <h2 className="mt-8 text-lg font-bold">Travelpayouts forecasting pilot</h2>
   {loading&&<p role="status" className="mt-8 text-sm text-muted-foreground">Checking fare history…</p>}
   {error&&<p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</p>}
   {r&&<>
