@@ -66,6 +66,105 @@ At the default setting, v5 commits ₹39.0 L of capital at risk, against ₹42.5
 
 These numbers compare two methods **inside the same assumed world**. They show that v5 makes better decisions given these assumptions, not that the assumptions are right. The same scenario model is used for planning and scoring, although the scoring draws are separate.
 
+## Additions: joint pricing, availability target, model-risk check, supplier priorities
+
+These were added on the same branch after the first v5 release. Settings for every number below: the 8 demo products, ₹50 L budget, r = 0.35, review date 16 Nov 2026, scored on the same 2,000 out-of-sample seasons.
+
+### Joint price and quantity search
+
+- **What changed.** v5 used to fix each product's selling price before allocating the budget. Now each product starts at its stand-alone best price, and the search can then move any product to another of its five candidate prices (±10% of the reference price, elasticity −1.2 as in v4). It re-optimises the quantities after each move and keeps only moves that improve the objective.
+- **Upper bound.** The proven upper bound now takes the best price, pre-paid quantity and allotment quantity for every product inside the minimax dual, so the certified gap still holds with prices chosen jointly. The Frank–Wolfe bound is used only when prices are fixed.
+- **Pair move.** A new move handles plans where no single product pays on its own but a diversified pair does: when the plan is empty, the search tries the smallest increment of every pair of products. It does nothing when the plan is not empty.
+- **Demo result.** Every product already picks the top of the ±10% band, with or without the joint search, so the demo numbers do not change. A wider band should only be used once real elasticities have been measured.
+- **Test.** On random tiny cases, every price and quantity combination was enumerated. The bound is never below the true joint optimum, and the plan is within 3% of it. The unit test runs 24 cases; a one-off run of 160 cases also passed.
+- **Switching it off.** `jointPricing: false` restores the earlier fixed-price search exactly: the demo output matched the committed engine byte for byte.
+
+### Availability target ("serve at least X% of demand")
+
+- **The control.** In the risk panel, the planner can require the plan to serve at least 85%, 90% or 95% of modelled demand. API callers can pass any target from 0 to 0.99. Served demand includes existing stock.
+- **How it works.** Every unit sold gets an extra "service value" μ in the objective. The engine searches for the smallest μ that makes the optimal plan reach the target (doubling, then bisection), keeping the no-target selling prices: the target is met by buying more cover, not by discounting to create demand. This is a standard Lagrangian treatment. The objective stays concave, so the proven bound still applies to the service-augmented objective.
+- **What it reports.** μ is the implied value of one extra booking served. The panel also shows the expected profit and the worst-10% profit given up.
+- **When the target cannot be reached.** If budget or supplier capacity cannot reach the target, the plan is left unchanged and the panel shows roughly the most this budget can serve.
+- **Results:**
+
+| Target | Status | Served (no target: 84.2%) | Capital at risk | Expected profit change | Worst-10% change | Implied value per extra booking |
+|---|---|---|---|---|---|---|
+| 85% | met | 85.6% | ₹39.9 L | +₹0.14 L | −₹0.32 L | ₹661 |
+| 90% | met | 90.7% | ₹44.5 L (505 pre-paid + 220 allotment units) | +₹0.20 L | −₹2.48 L | ₹5,159 |
+| 95% | out of reach | — (about 94.7% at most) | — | — | — | — |
+
+Going from 84% to 91% availability costs almost no expected profit at this budget; the price is tail risk. At ₹20 L, a 90% target is out of reach (about 67% at most).
+
+- **Consistency across the app.** The target travels with the plan rows, so the following all re-plan under the same target: budget comparison, stress re-plans, quote impact, landed cost, Trends what-if, the decision record and the planning API check.
+- **Run time.** Adding a target costs about 1–2 s per re-plan.
+- **Limitation.** The target is checked on the 500 planning seasons. The out-of-sample share can differ by a few tenths of a percentage point.
+
+### Model-risk check (mismatched worlds)
+
+**What it does.** Every plan is optimised under the assumptions in `RISK_ASSUMPTIONS`. The check (`src/lib/model-risk.ts`, on the stress-test page and via `modelRisk: true` in the API) keeps the decisions fixed and scores them in 9 worlds:
+- as planned;
+- demand 15% below forecast;
+- demand 15% above forecast;
+- selling prices 5% lower;
+- cancellations ×1.5;
+- volatility ×1.5;
+- destinations moving together (same-region correlation 0.80 and cross-region 0.40, instead of 0.50 and 0.15);
+- shocks 3× as likely;
+- several of these at once.
+
+**How it compares.** All worlds use the same random draws (common random numbers), so differences come from the assumption change, not from sampling noise. Each world compares v5 with v4 and with an "oracle": a plan re-optimised knowing the world in advance. Regret is the oracle's risk-adjusted result minus the plan's.
+
+**Results** (risk-adjusted result = 0.65·E + 0.35·CVaR₁₀%):
+
+| World | v5 result | v5 regret | v4 result | v4 regret |
+|---|---|---|---|---|
+| As planned | ₹18.97 L | ₹0.00 L | ₹16.94 L | ₹2.03 L |
+| Demand −15% | ₹15.04 L | ₹0.88 L | ₹13.66 L | ₹2.27 L |
+| Demand +15% | ₹21.41 L | ₹0.59 L | ₹18.71 L | ₹3.29 L |
+| Prices −5% | ₹15.59 L | ₹0.01 L | ₹13.98 L | ₹1.61 L |
+| Cancellations ×1.5 | ₹17.35 L | ₹0.14 L | ₹15.62 L | ₹1.88 L |
+| Volatility ×1.5 | ₹15.59 L | ₹0.40 L | ₹13.49 L | ₹2.51 L |
+| Destinations move together | ₹18.49 L | ₹0.01 L | ₹16.54 L | ₹1.97 L |
+| Shocks ×3 | ₹15.21 L | ₹0.31 L | ₹13.22 L | ₹2.29 L |
+| Several wrong at once | ₹9.87 L | ₹1.92 L | ₹8.30 L | ₹3.48 L |
+
+**Across risk settings.** v5 has the higher risk-adjusted result and the higher worst-10% profit in all 9 worlds at r = 0, 0.35 and 0.8. Its average regret is about 5× lower than v4's:
+
+| Risk setting r | v5 average regret | v4 average regret |
+|---|---|---|
+| 0 | ₹0.44 L | ₹2.67 L |
+| 0.35 | ₹0.48 L | ₹2.37 L |
+| 0.8 | ₹0.59 L | ₹3.37 L |
+
+**What to watch.** The worst case for v5 is "several wrong at once": ₹9.87 L against ₹8.30 L for v4, with a worst-10% average of −₹0.28 L.
+
+**Caveats.** The worlds are synthetic stress tests of the method, not forecasts. The check runs in about 3–4 s (9 re-optimisations).
+
+### Supplier-integration priorities
+
+**What it does.** The PS says the plan should feed supplier integration as well as pre-buy and pricing. `src/lib/supplier-priority.ts` turns the demand a plan leaves unserved into a ranked list, shown on the coverage page. It works for both engines.
+
+**What each row shows:**
+- expected unserved units;
+- strong-season (P90) unserved units, to size a new connection;
+- booking value unserved (expected unserved units × selling price);
+- units committed against units offered;
+- a next step, with the reason and the current channel.
+
+**The next step** is one of:
+- *Refresh supplier quote*: the quote has expired.
+- *Negotiate more units*: the plan takes everything the supplier offers.
+- *Extend allotment*: the allotment is fully used.
+- *Connect free-sale / API supply*: committing does not pay.
+- *Top up with free-sale*: the budget or risk stops further commitment.
+
+**Demo results:**
+- ₹13.2 L of booking value stays unserved across 8 products.
+- The top three are Dubai city hotels (22 room-nights expected, 55 in a strong season, ₹2.8 L), North Goa (20 / 66, ₹2.0 L) and Mumbai → Singapore (7 / 23 seats, ₹1.8 L).
+- All eight are "Top up with free-sale" because risk, not capacity, limits the plan.
+- At ₹20 L, the products whose allotments are full switch to "Extend allotment".
+- At ₹20 L, the v4 plan leaves both flight routes at zero units, so they show "Connect free-sale / API supply".
+
 ## Validation
 
 - `tests/risk-optimizer.test.ts` (9 tests):
@@ -87,6 +186,14 @@ These numbers compare two methods **inside the same assumed world**. They show t
     - This is one public dataset with simulated censoring. Repeat the check on TBO's own sold-out logs.
 - `tests/buy-window.test.ts` (3 tests): travel-period parsing, the statistical helpers, and the four statuses (past, late, buy now, wait).
 - `tests/inventory-csv-allotments.test.ts`: the new CSV columns parse, round-trip and are validated. Older files without them still plan.
+- `tests/risk-v5-extensions.test.ts` (8 tests):
+  - **Joint pricing:** exhaustive check over every price and quantity combination, and fixed pricing never beats joint pricing.
+  - **Availability target:** met, not-binding and out-of-reach cases; costs are consistent with the plans; the budget is a hard limit; rows carry the target.
+  - **What-if re-plans** keep the plan's target.
+  - **Scenario overrides** scale demand and prices exactly, keeping common random numbers, and invalid correlation weights are rejected.
+  - **Model-risk check:** the "as planned" world matches the risk panel with zero regret; v5 is ahead in every world on the demo; it matches a direct evaluation.
+  - **Supplier priorities:** ranking and the choice of next step, including the capacity-bound and expired-quote cases.
+  - **API:** validation of `serviceTarget`, `jointPricing` and `modelRisk`, and the shape of the response.
 - `tests/plan-api.test.ts`, against a running server: the API engine switch works, an unknown engine returns 400, and the v5 summary fields are present.
 - `tests/fitted-demand.e2e.cjs`: v4 still behaves exactly as before, a fitted blend weight reaches the v5 API, and the workspace explains when the weight is moot.
 
@@ -102,7 +209,9 @@ These numbers compare two methods **inside the same assumed world**. They show t
 
 ## Limitations
 
-- **Pricing.** The selling price is chosen per product before allocation, using v4's five-price search. It is not optimised jointly with quantities. Cross-product substitution is not modelled.
+- **Pricing.** Prices are chosen jointly with quantities, but only from five candidates within ±10% of the reference price, with an assumed elasticity of −1.2. Cross-product substitution is not modelled.
+- **Availability target.** The target is enforced on the planning seasons and covers modelled demand only. It does not include free-sale bookings made outside the plan.
+- **Supplier priorities.** The list ranks by gross booking value. It does not include the cost of integrating a supplier or free-sale margins.
 - **Allotments.** Release has a single cut-off. Contracts with free release or partial release penalties need extra terms.
 - **Scope.** Shocks are scenario assumptions, not forecasts of specific events. The engine shares v4's 20-row / 3,000-unit CSV and API limits.
 
@@ -110,11 +219,15 @@ These numbers compare two methods **inside the same assumed world**. They show t
 
 ```http
 POST /api/procurement/plan
-{"items":[...], "budget":5000000, "risk":0.35, "asOf":"2026-11-16", "engine":"risk-cvar-v5"}
+{"items":[...], "budget":5000000, "risk":0.35, "asOf":"2026-11-16", "engine":"risk-cvar-v5", "serviceTarget":0.9, "modelRisk":true}
 ```
 
 - `engine` is optional. It defaults to `scenario-grid-v4`; any other value returns 400.
 - With v5, `summary` adds `cvar10`, `lossProbability`, `demandServedShare`, `demandServedShareBefore`, `prepaidUnits` and `allotmentUnits`.
 - `optimization.risk` carries the full risk summary, including the profit histogram.
+- `serviceTarget` (v5 only; 0–0.99) sets an availability target. `optimization.service` reports its status, the served share with and without the target, the implied value per booking and the profit and CVaR costs.
+- `jointPricing` (v5 only; default `true`) can switch off the joint price search. `optimization.pricing` says which mode ran.
+- `modelRisk: true` (v5 only) adds the mismatched-world report as `modelRisk` (about 3–5 s).
+- Sending any of these three options without `engine: "risk-cvar-v5"` returns 400.
 - `model` reports the engine (with `-experimental-blend` when a fitted blend is applied).
 - Saved private plans record the model version. Projects created before v5 must apply [`docs/security/allow-risk-cvar-v5.sql`](../../docs/security/allow-risk-cvar-v5.sql) before v5 plans can be saved.

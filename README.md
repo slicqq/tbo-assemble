@@ -18,10 +18,10 @@ Open http://localhost:3000 for the original homepage or http://localhost:3000/in
 - Synthetic hotel and flight product-period inputs with bookings, search conversion, seasonality, cancellations, hypothetical market signals, sold-out context and supplier capacity.
 - Editable budget and risk appetite, whole-unit allocation respecting the budget and capacity, and a five-price search.
 - Low/base/high demand scenarios, expected and low-scenario profit, opportunity details, type/period filters and CSV export.
-- **Portfolio risk engine `risk-cvar-v5` (default in `/inventory`).** It plans on 500 correlated seasons and maximises a blend of expected profit and worst-10% profit (CVaR). It mixes pre-paid and flexible allotment units under a capital-at-risk budget, recovers demand lost to sell-outs, recommends buy windows, and proves how close each plan is to the best possible. See [risk-engine.md](public/research/risk-engine.md). The legacy `scenario-grid-v4` stays selectable.
+- **Portfolio risk engine `risk-cvar-v5` (default in `/inventory`).** It plans on 500 correlated seasons and maximises a blend of expected profit and worst-10% profit (CVaR). It mixes pre-paid and flexible allotment units under a capital-at-risk budget, recovers demand lost to sell-outs, recommends buy windows, and proves how close each plan is to the best possible. See [risk-engine.md](public/research/risk-engine.md). The legacy `scenario-grid-v4` stays selectable. It also offers an **availability target** (serve ≥ 85/90/95% of demand, with its profit and tail-risk cost), a **model-risk check** that scores the plan in 9 worlds where the assumptions are wrong (stress-test page), and a **supplier-integration priority list** that ranks unserved demand by booking value (coverage page).
 - Search-discovered research catalogs and method notes in [docs/research](docs/research/README.md).
 
-Run the decision engine invariants with `npx tsx tests/procurement.test.ts`, and the risk engine with `npx tsx tests/risk-optimizer.test.ts`, `tests/demand-unconstraining.test.ts`, `tests/buy-window.test.ts` and `tests/inventory-csv-allotments.test.ts`.
+Run the decision engine invariants with `npx tsx tests/procurement.test.ts`, and the risk engine with `npx tsx tests/risk-optimizer.test.ts`, `tests/demand-unconstraining.test.ts`, `tests/buy-window.test.ts`, `tests/inventory-csv-allotments.test.ts` and `tests/risk-v5-extensions.test.ts`.
 
 ## Important limitations
 
@@ -48,7 +48,7 @@ The dashboard calculates demand from imported historical bookings and look-to-bo
 
 Quote expiry and previous price provide transparent timing flags. Strategy suggestions (pre-buy, flexible terms, or monitor/integrate) are rules using the selected quantity, sell-through and downside; they do not connect to suppliers or execute bookings. See the [input guide](public/research/inventory-input.md) for definitions and caveats.
 
-The optional `POST /api/procurement/plan` route accepts JSON `{items, budget, risk, asOf, engine?}` using the same fields as the CSV and returns the recommendations and summary. `engine` is `scenario-grid-v4` (default) or `risk-cvar-v5`. v5 adds CVaR, loss probability, demand served and pre-paid/allotment units to the summary. The dashboard’s **Run planning API** button explicitly sends the current inputs to the application server. The route does not place orders or persist data. Protect this endpoint with authentication, rate limiting, access controls and audit logging before production use.
+The optional `POST /api/procurement/plan` route accepts JSON `{items, budget, risk, asOf, engine?}` using the same fields as the CSV and returns the recommendations and summary. `engine` is `scenario-grid-v4` (default) or `risk-cvar-v5`. v5 adds CVaR, loss probability, demand served and pre-paid/allotment units to the summary. With v5 you can also pass `serviceTarget` (0–0.99), `jointPricing` (default true) and `modelRisk: true`. The dashboard’s **Run planning API** button explicitly sends the current inputs to the application server. The route does not place orders or persist data. Protect this endpoint with authentication, rate limiting, access controls and audit logging before production use.
 
 ## Flight demand and fare intelligence
 
