@@ -9,9 +9,10 @@ import { stayDate } from './buy-window';
  *
  *     log U_t = a + g·(t/12) + s_month(t) + β·log(signal_t / mean) + e·log(price_t / mean) + ε_t
  *
- * where U is unconstrained demand (bookings plus measured sold-out bookings):
+ * fitted on at most the latest 48 months, where U is unconstrained demand (bookings plus measured sold-out bookings):
  *  - seasonality: the month effects s give multiplicative month-of-year indices (geometric mean 1);
- *  - growth: g is the year-on-year trend, clamped to 0.8–1.3;
+ *  - growth: the last 12 months over the 12 before (net of signal and price effects; season cancels), clamped to
+ *    0.8–1.3; the in-window trend g only absorbs drift while the month effects are estimated;
  *  - external signal: β (shrunk by m/(m+12) for short histories, clamped 0–2), applied to the product's `signal`
  *    (read as the target month's signal relative to its normal level);
  *  - price sensitivity: e combined with a prior (normal, sd 1: the Lerner-implied elasticity unless one is supplied),
@@ -21,7 +22,7 @@ import { stayDate } from './buy-window';
  * The forecast is anchored on the level of the last three months (season, signal and price removed), projected to the
  * target month with the trend, the month index, the planned price and the signal. Every component is refitted at each
  * origin of a rolling-origin backtest using only data available at that origin. The learned forecast is used only if
- * it beats seasonal-naive ("same month last year") by more than 5% MAE over at least 6 origins; otherwise the planner
+ * it beats seasonal-naive ("same month last year") by more than 5% MAE over at least 6 of the latest 36 origins; otherwise the planner
  * uses seasonal-naive. Either way the planner uses exactly the forecast that was validated (`LearnedDemand.forecast`).
  */
 
@@ -42,6 +43,11 @@ export type DemandHistoryPoint = {
   signal?: number;
   /** Average selling price achieved for that month (same currency as `referencePrice`). */
   price?: number;
+  /**
+   * Leave this month out of fitting and validation: a known shock (e.g. a lockdown) or a value imputed for a gap in the
+   * source. The month still keeps the series consecutive; seasonal-naive skips it and uses the same month a year earlier.
+   */
+  exclude?: boolean;
 };
 
 export type LearnedDemand = {
@@ -89,6 +95,13 @@ export type LearnedDemand = {
 
 export const PRIOR_PRICE_ELASTICITY = { Hotel: -3.0, Flight: -3.5 } as const;
 const MIN_MONTHS = 24, MIN_FOLDS = 6, GATE = 0.95;
+/**
+ * The gate, error spread and interval use the latest 36 rolling origins (three years of evidence), so they describe how
+ * forecastable the product is now rather than in a past regime such as 2020.
+ */
+const EVAL_ORIGINS = 36;
+/** The model is fitted on at most the latest 48 months, so old regimes (e.g. 2020) do not distort recent seasonality. */
+const FIT_WINDOW = 48;
 
 const monthIndex = (ym: string) => { const m = /^(\d{4})-(\d{2})$/.exec(ym); return m ? Number(m[1]) * 12 + Number(m[2]) - 1 : NaN; };
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
@@ -136,7 +149,7 @@ export function targetMonthIndex(period: string): number {
   return d.getUTCFullYear() * 12 + d.getUTCMonth();
 }
 
-type Series = { start: number; U: number[]; signal: (number | null)[]; price: (number | null)[] };
+type Series = { start: number; U: number[]; use: boolean[]; signal: (number | null)[]; price: (number | null)[] };
 
 /** Latest run of consecutive months; unconstrained demand U = bookings + measured sold-out bookings. */
 function seriesOf(history: DemandHistoryPoint[], fallbackConversion: number): Series | null {
@@ -155,7 +168,7 @@ function seriesOf(history: DemandHistoryPoint[], fallbackConversion: number): Se
     const conversion = available > 0 ? Math.min(1, h.bookings / available) : fallbackConversion;
     return h.bookings + soldOut * conversion;
   });
-  return { start: run[0].i, U, signal: run.map(h => (finite(h.signal) && h.signal > 0 ? h.signal : null)), price: run.map(h => (finite(h.price) && h.price > 0 ? h.price : null)) };
+  return { start: run[0].i, U, use: run.map(h => h.exclude !== true), signal: run.map(h => (finite(h.signal) && h.signal > 0 ? h.signal : null)), price: run.map(h => (finite(h.price) && h.price > 0 ? h.price : null)) };
 }
 
 type Fit = {
@@ -167,7 +180,8 @@ type Fit = {
 /**
  * Fits a log-linear demand model on U[0..last] (inclusive) by least squares:
  *   log U_t = a + g·(t/12) + s_month(t) + β·log(signal_t / mean) + e·log(price_t / mean) + ε_t
- * Month effects give the seasonal indices, g the year-on-year growth (clamped 0.8–1.3), β the signal effect (shrunk by
+ * (Huber-weighted, so shock months have bounded influence). Month effects give the seasonal indices; projection growth is
+ * the median year-on-year change of the last 12 months (clamped 0.8–1.3), β the signal effect (shrunk by
  * m/(m+12), clamped 0–2) and e the price elasticity (combined with the prior as a normal posterior). The forecast anchor is
  * the mean of the last three months' level with season, signal and price removed, so it adapts to level shifts.
  */
@@ -175,8 +189,9 @@ function fit(series: Series, last: number, prior: number): Fit {
   const fail: Fit = { S: Array(12).fill(1), growth: 1, beta: null, elasticity: null, elasticitySe: null, signalMean: null, priceMean: null, ok: false, anchor: 0 };
   const n = last + 1, U = series.U;
   if (n < MIN_MONTHS) return fail;
+  // The latest FIT_WINDOW usable months (excluded months do not count towards the window).
   const obs: number[] = [];
-  for (let t = 0; t < n; t++) if (U[t] > 0) obs.push(t);
+  for (let t = last; t >= 0 && obs.length < FIT_WINDOW; t--) if (series.use[t] && U[t] > 0) obs.unshift(t);
   const monthOf = (t: number) => (series.start + t) % 12;
   const seen = new Set(obs.map(monthOf));
   if (seen.size < 12 || obs.length < MIN_MONTHS - 2) return fail;
@@ -193,7 +208,9 @@ function fit(series: Series, last: number, prior: number): Fit {
   // Columns: intercept, trend (years), 11 month dummies (base = the first month seen), signal, price.
   const base = monthOf(data[0]), dummies = Array.from({ length: 12 }, (_, m) => m).filter(m => m !== base);
   const X = data.map(t => [1, t / 12, ...dummies.map(m => (monthOf(t) === m ? 1 : 0)), ...(useSignal ? [x1(t)!] : []), ...(usePrice ? [x2(t)!] : [])]);
-  const ols = leastSquares(X, data.map(t => Math.log(U[t])));
+  // Huber-weighted least squares: a shock month (a lockdown, a strike, a data error) gets bounded influence on the month
+  // effects instead of dragging the whole seasonal pattern.
+  const ols = robustLeastSquares(X, data.map(t => Math.log(U[t])));
   if (!ols) return fail;
   const trend = ols.coef[1];
   const logS = Array.from({ length: 12 }, (_, m) => (m === base ? 0 : ols.coef[2 + dummies.indexOf(m)]));
@@ -210,32 +227,56 @@ function fit(series: Series, last: number, prior: number): Fit {
     elasticity = Math.min(-1.05, Math.max(ELASTICITY_BOUNDS.min, (e * wl + prior * wp) / (wl + wp)));
     elasticitySe = Math.sqrt(1 / (wl + wp));
   }
-  const growth = Math.min(1.3, Math.max(0.8, Math.exp(trend)));
-  // Anchor: level of the last three observed months with season, signal and price removed, moved to `last` by the trend.
-  const recent = obs.filter(t => t > last - 3);
-  let anchorSum = 0;
-  for (const t of recent) {
+  // Projection growth: median of the last 12 year-on-year log changes, net of signal and price (season cancels). The
+  // median ignores a few shock months in either year; the window's trend is only a nuisance term for the month effects.
+  const net = (t: number) => Math.log(U[t]) - (beta !== null ? beta * (x1(t) ?? 0) : 0) - (elasticity !== null ? elasticity * (x2(t) ?? 0) : 0);
+  const yoy: number[] = [];
+  for (let t = Math.max(12, last - 11); t <= last; t++) if (series.use[t] && series.use[t - 12] && U[t] > 0 && U[t - 12] > 0) yoy.push(net(t) - net(t - 12));
+  const growth = Math.min(1.3, Math.max(0.8, yoy.length >= 6 ? Math.exp(quantile(yoy, 0.5)) : Math.exp(trend)));
+  // Anchor: median level of the last three usable months with season, signal and price removed, moved to `last` by the
+  // growth (the median keeps one odd month from shifting the level).
+  const recent = obs.slice(-3).filter(t => t > last - 6);
+  const levels = recent.map(t => {
     let level = Math.log(U[t]) - Math.log(S[monthOf(t)]);
     if (beta !== null) level -= beta * (x1(t) ?? 0);
     if (elasticity !== null) level -= elasticity * (x2(t) ?? 0);
-    anchorSum += level + Math.log(growth) * (last - t) / 12;
-  }
-  const anchor = recent.length ? anchorSum / recent.length : Math.log(U[obs[obs.length - 1]]);
+    return level + Math.log(growth) * (last - t) / 12;
+  });
+  if (!levels.length) return fail;
+  const anchor = quantile(levels, 0.5);
   return { S, growth, beta, elasticity, elasticitySe, signalMean: beta !== null ? signalMean : null, priceMean: elasticity !== null ? priceMean : null, ok: true, anchor };
 }
 
-/** Ordinary least squares with standard errors (small dense systems). */
-function leastSquares(X: number[][], y: number[]): { coef: number[]; se: number[] } | null {
+/** Weighted least squares with standard errors (small dense systems). */
+function leastSquares(X: number[][], y: number[], w: number[] = y.map(() => 1)): { coef: number[]; se: number[]; resid: number[] } | null {
   const n = X.length, p = X[0]?.length ?? 0;
   if (n <= p + 2) return null;
-  const A = Array.from({ length: p }, (_, i) => Array.from({ length: p }, (_, j) => X.reduce((s, r) => s + r[i] * r[j], 0)));
-  const b = Array.from({ length: p }, (_, i) => X.reduce((s, r, k) => s + r[i] * y[k], 0));
+  const A = Array.from({ length: p }, (_, i) => Array.from({ length: p }, (_, j) => X.reduce((s, r, k) => s + w[k] * r[i] * r[j], 0)));
+  const b = Array.from({ length: p }, (_, i) => X.reduce((s, r, k) => s + w[k] * r[i] * y[k], 0));
   const inv = invert(A);
   if (!inv) return null;
   const coef = inv.map(row => row.reduce((s, v, j) => s + v * b[j], 0));
   const resid = y.map((v, k) => v - X[k].reduce((s, x, j) => s + x * coef[j], 0));
-  const sigma2 = resid.reduce((s, r) => s + r * r, 0) / (n - p);
-  return { coef, se: inv.map((row, i) => Math.sqrt(Math.max(0, row[i] * sigma2))) };
+  const sigma2 = resid.reduce((s, r, k) => s + w[k] * r * r, 0) / (n - p);
+  return { coef, se: inv.map((row, i) => Math.sqrt(Math.max(0, row[i] * sigma2))), resid };
+}
+
+/**
+ * Huber M-estimate by iteratively reweighted least squares (tuning constant 1.345 × robust scale): ordinary least squares
+ * for well-behaved data, bounded influence for shock months.
+ */
+function robustLeastSquares(X: number[][], y: number[]): { coef: number[]; se: number[] } | null {
+  let fit = leastSquares(X, y);
+  for (let iteration = 0; fit && iteration < 8; iteration++) {
+    const abs = fit.resid.map(Math.abs), scale = Math.max(1e-6, quantile(abs, 0.5) / 0.6745), c = 1.345 * scale;
+    const w = abs.map(r => (r <= c ? 1 : c / r));
+    const next = leastSquares(X, y, w);
+    if (!next) break;
+    const moved = next.coef.reduce((m, v, j) => Math.max(m, Math.abs(v - fit!.coef[j])), 0);
+    fit = next;
+    if (moved < 1e-6) break;
+  }
+  return fit;
 }
 
 function invert(A: number[][]): number[][] | null {
@@ -252,9 +293,10 @@ function invert(A: number[][]): number[][] | null {
   return M.map(row => row.slice(n));
 }
 
+/** Same month in the latest usable year at or before `origin` (excluded months are skipped a year at a time). */
 function seasonalNaive(series: Series, origin: number, target: number): number | null {
   let j = target - 12;
-  while (j > origin) j -= 12;
+  while (j > origin || (j >= 0 && !series.use[j])) j -= 12;
   return j >= 0 ? series.U[j] : null;
 }
 
@@ -297,10 +339,11 @@ function computeLearned(item: Opportunity, history: DemandHistoryPoint[]): Learn
   // Rolling-origin backtest: refit at every origin on data up to that origin only, forecast `horizon` months ahead.
   // Price and signal at the target month are inputs the planner knows (its own price; a forward-looking signal).
   const errModel: number[] = [], errNaive: number[] = [], relModel: number[] = [], relNaive: number[] = [];
-  for (let origin = MIN_MONTHS - 1; origin + horizon <= n - 1; origin++) {
+  const lastOrigin = n - 1 - horizon;
+  for (let origin = Math.max(MIN_MONTHS - 1, lastOrigin - EVAL_ORIGINS + 1); origin <= lastOrigin; origin++) {
     const f = fit(series, origin, prior);
     const t = origin + horizon, actual = series.U[t], naive = seasonalNaive(series, origin, t);
-    if (!f.ok || naive === null || !(actual > 0)) continue;
+    if (!series.use[t] || !f.ok || naive === null || !(actual > 0)) continue;
     const p = series.price[t], g = series.signal[t];
     const forecast = project(series, f, origin, t, f.priceMean && p ? p / f.priceMean : null, f.signalMean && g ? g / f.signalMean : null);
     errModel.push(Math.abs(forecast - actual)); errNaive.push(Math.abs(naive - actual));
@@ -346,10 +389,14 @@ export function elasticityOf(item: Opportunity): number {
   return priorElasticity(item);
 }
 
-/** Demand volatility the risk engine uses: the rolling-backtest error spread when the history passed, else the typed value. */
+/**
+ * Demand volatility the risk engine uses: the rolling-backtest error spread when the history passed, else the typed
+ * value. A market-level history (`historyScope: 'market'`) is smoother than a single product, so the typed value is a floor.
+ */
 export function volatilityOf(item: Opportunity): number {
   const learned = learnDemand(item);
-  return learned && learned.gate === 'passed' && learned.folds >= MIN_FOLDS ? learned.volatility : item.volatility;
+  if (!learned || learned.gate !== 'passed' || learned.folds < MIN_FOLDS) return item.volatility;
+  return item.historyScope === 'market' ? Math.max(learned.volatility, item.volatility) : learned.volatility;
 }
 
 export type DemandSource = { kind: 'learned' | 'seasonal-naive' | 'formula'; label: string; detail: string };

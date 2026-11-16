@@ -20,17 +20,23 @@ export async function POST(request:Request){
   if(typeof asOf!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(asOf)||!Number.isFinite(Date.parse(asOf+'T00:00:00Z'))||new Date(asOf+'T00:00:00Z').toISOString().slice(0,10)!==asOf)return NextResponse.json({error:'asOf must be a valid YYYY-MM-DD date.'},{status:400});
   const keys=[...columns,...optionalColumns];
   const lines=items.map((item:unknown)=>{if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Each item must be an object.');return keys.map(key=>{const v=(item as Record<string,unknown>)[key];if(v!==undefined&&v!==null&&typeof v!=='string'&&typeof v!=='number')throw new Error(`Invalid ${key}.`);return `"${String(v??'').replaceAll('"','""')}"`;}).join(',')});
-  const inventory=readInventoryCSV([keys.join(','),...lines].join('\n'));for(let i=0;i<inventory.length;i++){const weight=items[i].bookingWeight;if(weight!==undefined&&weight!==null){if(typeof weight!=='number'||!Number.isFinite(weight)||weight<0||weight>1)throw new Error('bookingWeight must be a number between 0 and 1.');inventory[i].bookingWeight=weight;}const extras=readLearningInputs(items[i],i);if(extras.priceElasticity!==undefined)inventory[i].priceElasticity=extras.priceElasticity;if(extras.history)inventory[i].history=extras.history;}const optimization=optimizePortfolio(inventory,budget,risk,{asOf,engine,serviceTarget,jointPricing,budgetBasis});const robustness=modelRisk?checkModelRisk(inventory,budget,risk,{asOf,jointPricing,budgetBasis,planRows:optimization.rows}):undefined;const plan=optimization.rows;const riskSummary=optimization.risk;
+  const inventory=readInventoryCSV([keys.join(','),...lines].join('\n'));for(let i=0;i<inventory.length;i++){const weight=items[i].bookingWeight;if(weight!==undefined&&weight!==null){if(typeof weight!=='number'||!Number.isFinite(weight)||weight<0||weight>1)throw new Error('bookingWeight must be a number between 0 and 1.');inventory[i].bookingWeight=weight;}const extras=readLearningInputs(items[i],i);if(extras.priceElasticity!==undefined)inventory[i].priceElasticity=extras.priceElasticity;if(extras.history)inventory[i].history=extras.history;if(extras.historyScope)inventory[i].historyScope=extras.historyScope;}const optimization=optimizePortfolio(inventory,budget,risk,{asOf,engine,serviceTarget,jointPricing,budgetBasis});const robustness=modelRisk?checkModelRisk(inventory,budget,risk,{asOf,jointPricing,budgetBasis,planRows:optimization.rows}):undefined;const plan=optimization.rows;const riskSummary=optimization.risk;
   return NextResponse.json({asOf,budget,risk,summary:{spend:plan.reduce((s,r)=>s+r.spend,0),expectedProfit:plan.reduce((s,r)=>s+r.expectedProfit,0),lowProfit:plan.reduce((s,r)=>s+r.downsideProfit,0),units:plan.reduce((s,r)=>s+r.qty,0),...(riskSummary?{cvar10:riskSummary.cvar,lossProbability:riskSummary.pLoss,demandServedShare:riskSummary.servedShare,demandServedShareBefore:riskSummary.servedShareBefore,prepaidUnits:riskSummary.prepaidUnits,allotmentUnits:riskSummary.allotmentUnits}:{})},recommendations:plan,optimization:{objective:optimization.objective,upperBound:optimization.upperBound,gap:optimization.gap,baselineObjective:optimization.baselineObjective,algorithm:optimization.algorithm,bucketCount:optimization.bucketCount,engine,...(riskSummary?{risk:riskSummary}:{}),...(optimization.service?{service:optimization.service,pricing:optimization.pricing}:{})},...(robustness?{modelRisk:robustness}:{}),model:inventory.some(o=>o.bookingWeight!==undefined)?`${engine}-experimental-blend`:engine}, {headers:{'Cache-Control':'no-store'}});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:'Invalid request.'},{status:400,headers:{'Cache-Control':'no-store'}})}
 }
 
 /**
  * Optional per-item inputs for the risk-cvar-v5 learned demand model (src/lib/learned-demand.ts), passed through
- * alongside the CSV columns: a supplied price elasticity and a monthly history (≤ 120 months).
+ * alongside the CSV columns: a supplied price elasticity, a monthly history (≤ 120 months; rows may set `exclude` for
+ * shock or imputed months) and `historyScope` ('product' or 'market').
  */
-function readLearningInputs(item: Record<string, unknown>, index: number): { priceElasticity?: number; history?: DemandHistoryPoint[] } {
-  const out: { priceElasticity?: number; history?: DemandHistoryPoint[] } = {};
+function readLearningInputs(item: Record<string, unknown>, index: number): { priceElasticity?: number; history?: DemandHistoryPoint[]; historyScope?: 'product' | 'market' } {
+  const out: { priceElasticity?: number; history?: DemandHistoryPoint[]; historyScope?: 'product' | 'market' } = {};
+  const scope = item.historyScope;
+  if (scope !== undefined && scope !== null) {
+    if (scope !== 'product' && scope !== 'market') throw new Error(`Item ${index + 1}: historyScope must be "product" or "market".`);
+    out.historyScope = scope;
+  }
   const e = item.priceElasticity;
   if (e !== undefined && e !== null) {
     if (typeof e !== 'number' || !Number.isFinite(e) || e >= 0 || e < -20) throw new Error(`Item ${index + 1}: priceElasticity must be a negative number from -20 to 0.`);
@@ -51,6 +57,10 @@ function readLearningInputs(item: Record<string, unknown>, index: number): { pri
         if (x === undefined || x === null) continue;
         if (typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > 1e9) throw new Error(`Item ${index + 1}, history row ${r + 1}: ${key} must be a non-negative number.`);
         point[key] = x;
+      }
+      if (v.exclude !== undefined && v.exclude !== null) {
+        if (typeof v.exclude !== 'boolean') throw new Error(`Item ${index + 1}, history row ${r + 1}: exclude must be true or false.`);
+        if (v.exclude) point.exclude = true;
       }
       return point;
     });

@@ -5,6 +5,10 @@ export type Opportunity = { id:string; name:string; destination:string; kind:'Ho
  priceElasticity?:number;
  /** Optional monthly history (risk-cvar-v5 learned demand): seasonality, growth, signal effect, price sensitivity and forecast risk are learned from it. */
  history?:DemandHistoryPoint[];
+ /** 'product' (default): the history is this product's own bookings. 'market': a market-level series (e.g. public air traffic into the destination) used for seasonality, growth and the backtest; the planner then keeps at least the typed volatility, because one product is noisier than its market. */
+ historyScope?:'product'|'market';
+ /** Where the inputs came from (shown with the plan), e.g. the public series behind the history. */
+ dataSource?:string;
  /** Optional flexible-allotment terms (risk-cvar-v5): net cost per unit if taken as an allotment, deposit forfeited per unsold unit, and units the supplier offers on allotment. */
  allotmentBuy?:number; allotmentDepositPct?:number; allotmentCapacity?:number;
  /** Optional measured searches that found the product sold out (risk-cvar-v5 demand recovery). */
