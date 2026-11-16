@@ -1,7 +1,23 @@
-import { bestAtQuantity, createGreedyPlan, planRow, timingFor, purchaseCost, minimumPurchase, type Opportunity, type PlanOptions, type PlanRow } from './procurement-core';
+import { bestAtQuantity, createGreedyPlan, planRow, timingFor, purchaseCost, minimumPurchase, type Opportunity, type PlanEngine, type PlanOptions, type PlanRow } from './procurement-core';
+import { optimizePortfolioRisk, RISK_ENGINE_VERSION, type RiskSummary } from './risk-optimizer';
 
 type Choice={qty:number;cost:number;value:number};
-export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'; bucketCount:number};
+export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'|'risk-cvar-local-search'; bucketCount:number; engine?:PlanEngine; risk?:RiskSummary};
+
+/** Engine that produced a set of rows, so what-if tools replan with the same engine. */
+export function engineOf(rows:PlanRow[]):PlanEngine{return rows.some(r=>r.engine===RISK_ENGINE_VERSION)?RISK_ENGINE_VERSION:'scenario-grid-v4';}
+
+/**
+ * Entry point for every planner in the app. `engine: 'risk-cvar-v5'` runs the portfolio risk engine
+ * (correlated scenarios, CVaR, flexible allotments); the default remains scenario-grid-v4 below.
+ */
+export function optimizePortfolio(items:Opportunity[], budget:number, risk:number, options:PlanOptions={}):OptimizedPlan {
+ if(options.engine===RISK_ENGINE_VERSION){
+  const legacyRows=options.compareLegacy?optimizeScenarioGrid(items,budget,risk,{asOf:options.asOf}).rows:undefined;
+  return optimizePortfolioRisk(items,budget,risk,{...options,legacyRows});
+ }
+ return {...optimizeScenarioGrid(items,budget,risk,options),engine:'scenario-grid-v4'};
+}
 
 /**
  * Multiple-choice knapsack approximation with a conservative budget grid.
@@ -10,7 +26,7 @@ export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; 
  * better. A Lagrangian budget relaxation gives an upper bound on the model's
  * optimum. This proves nothing about the accuracy of the assumptions.
  */
-export function optimizePortfolio(items:Opportunity[], budget:number, risk:number, options:PlanOptions={}):OptimizedPlan {
+function optimizeScenarioGrid(items:Opportunity[], budget:number, risk:number, options:PlanOptions={}):OptimizedPlan {
  const asOf=options.asOf || new Date().toISOString().slice(0,10);
  const baseline=createGreedyPlan(items,budget,risk,{asOf});
  // Decimal prices can accumulate floating-point error in the greedy loop.

@@ -2,7 +2,7 @@
 import {useEffect,useState} from 'react';
 import {Search,ArrowRight} from 'lucide-react';
 import {findTrendsPreset,trendsPresets,trendsAdjustment,type TrendsSample} from '@/lib/google-trends';
-import {optimizePortfolio} from '@/lib/portfolio-optimizer';
+import {engineOf,optimizePortfolio} from '@/lib/portfolio-optimizer';
 import type {Opportunity,PlanRow} from '@/lib/procurement-core';
 const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
 const pct=(n:number)=>`${n>0?'+':''}${(n*100).toFixed(1)}%`;
@@ -11,7 +11,7 @@ export default function GoogleTrendsScenario({items,rows,budget,risk,asOf,attent
  useEffect(()=>{const update=()=>setNow(Date.now());const timer=setInterval(update,60000);document.addEventListener('visibilitychange',update);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',update)}},[]);
  const preset=findTrendsPreset(presetId)!;const available=items.filter(i=>i.kind===preset.kind&&i.destination.toLowerCase()===preset.destination.toLowerCase()&&(!('origin' in preset)||i.name.toLowerCase().includes(preset.origin)));
  const item=available.find(i=>i.id===selected)??available[0];const fresh=sample?.presetId===presetId?sample:undefined;const adjustment=trendsAdjustment(fresh,item,asOf,now);
- const valid=!!adjustment&&!!item&&!attentionOn;const scenario=enabled&&valid&&adjustment&&item?optimizePortfolio(items.map(i=>i.id===item.id?{...i,signal:Math.min(5,Math.max(0,i.signal*adjustment.factor))}:i),budget,risk,{asOf}).rows:null;
+ const valid=!!adjustment&&!!item&&!attentionOn;const scenario=enabled&&valid&&adjustment&&item?optimizePortfolio(items.map(i=>i.id===item.id?{...i,signal:Math.min(5,Math.max(0,i.signal*adjustment.factor))}:i),budget,risk,{asOf,engine:engineOf(rows)}).rows:null;
  async function search(){if(loading)return;setEnabled(false);setLoading(true);setError('');setSample(undefined);try{const response=await fetch('/api/market/search-trends',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({presetId})});const body=await response.json();if(!response.ok)throw Error(body.error||'Search is unavailable.');setSample(body);setNow(Date.now())}catch(e){setError(e instanceof Error?e.message:'Search is unavailable.')}finally{setLoading(false)}}
  function change(id:string){setPreset(id);setSelected('');setSample(undefined);setEnabled(false);setError('')}
  const sum=(rs:PlanRow[])=>({spend:rs.reduce((s,r)=>s+r.spend,0),profit:rs.reduce((s,r)=>s+r.expectedProfit,0)});const original=sum(rows),other=scenario?sum(scenario):null;const baseline=rows.find(r=>r.id===item?.id),changed=scenario?.find(r=>r.id===item?.id);

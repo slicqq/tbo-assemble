@@ -1,10 +1,10 @@
-import { createPlan, forecast, type Opportunity, type PlanRow } from './procurement';
+import { createPlan, forecast, type Opportunity, type PlanEngine, type PlanRow } from './procurement';
 
 /** Illustrative portfolio view. Cancellation uplift is in percentage points, not percent growth. */
-export function createRiskView(items: Opportunity[], budget: number, risk: number, asOf: string, cancellationUplift: number) {
+export function createRiskView(items: Opportunity[], budget: number, risk: number, asOf: string, cancellationUplift: number, engine?: PlanEngine) {
   const uplift = Number.isFinite(cancellationUplift) ? cancellationUplift : 0;
   const adjusted = items.map(item => ({ ...item, cancellations: Math.max(0, Math.min(1, item.cancellations + uplift)) }));
-  const rows = createPlan(adjusted, budget, risk, { asOf });
+  const rows = createPlan(adjusted, budget, risk, { asOf, engine });
   const modeledCancellations = adjusted.reduce((sum, item) => sum + forecast({ ...item, cancellations: 0 }) * item.cancellations, 0);
   return { rows, modeledCancellations, ...summarizeRisk(rows) };
 }

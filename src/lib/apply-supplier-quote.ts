@@ -21,5 +21,5 @@ export function applySupplierQuote(items:Opportunity[],quote:SupplierQuote,now:D
  if(lastFullDay<today)throw new Error('The quote expires today UTC. The planner uses whole dates, so it cannot safely apply this quote.');
  if(lastFullDay<'1900-01-01'||lastFullDay>'2100-12-31')throw new Error('Quote expiry is outside the supported planner date range.');
  const landed=Math.round((quote.unitPrice+extraPerUnit)*100)/100;
- return items.map(x=>x.id===item.id?{...x,previousBuy:x.buy,buy:landed,recoveryPct:extraPerUnit===0?x.recoveryPct:quote.unitPrice*(x.recoveryPct??0)/landed,capacity,minOrderUnits:quote.minimumUnits,quoteExpiry:lastFullDay}:x);
+ return items.map(x=>x.id===item.id?{...x,previousBuy:x.buy,buy:landed,recoveryPct:extraPerUnit===0?x.recoveryPct:quote.unitPrice*(x.recoveryPct??0)/landed,capacity,...(x.allotmentCapacity!==undefined?{allotmentCapacity:Math.min(x.allotmentCapacity,capacity)}:{}),minOrderUnits:quote.minimumUnits,quoteExpiry:lastFullDay}:x);
 }

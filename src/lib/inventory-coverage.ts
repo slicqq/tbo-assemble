@@ -3,6 +3,8 @@ import {modeledDemandScenarios,type PlanRow} from './procurement-core';
 /** Coverage of incremental demand after existing stock, using the SAME scenario
  * convention as the optimizer. Modeled sales are not confirmed bookings. */
 export function coverageFor(row:PlanRow) {
+ // risk-cvar-v5 rows carry coverage from the out-of-sample scenario evaluation (incl. allotments).
+ if(row.coverage)return {need:row.coverage.need,served:row.coverage.served,unmet:row.coverage.unmet,highUnmet:row.coverage.highUnmet,incrementalCapacity:row.qty,existingStock:row.existingStock??0};
  // A zero-quantity row has no meaningful optimized selling price. Use its reference price.
  const cases=modeledDemandScenarios(row,row.qty>0?row.price:row.referencePrice);
  const need=cases.reduce((s,c)=>s+c.prob*c.incremental,0);

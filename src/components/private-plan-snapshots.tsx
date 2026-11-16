@@ -5,9 +5,12 @@ import Link from 'next/link';
 import { Bookmark, FolderOpen, Save, Trash2 } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { PLAN_MODEL_VERSION, validatePlanInput, type PlanInput } from '@/lib/private-plan';
+import type { PlanEngine } from '@/lib/procurement';
+import { RISK_ENGINE_VERSION } from '@/lib/risk-optimizer';
 
 type Snapshot = { id:string; name:string; source:'synthetic'|'uploaded'; items:unknown; budget:number; risk:number; as_of:string; model_version:string; created_at:string };
-export default function PrivatePlanSnapshots({ input, onLoad, hasUnappliedBudget }: { input:PlanInput; onLoad:(input:PlanInput)=>void; hasUnappliedBudget:boolean }) {
+export default function PrivatePlanSnapshots({ input, onLoad, hasUnappliedBudget, engine='scenario-grid-v4' }: { input:PlanInput; onLoad:(input:PlanInput)=>void; hasUnappliedBudget:boolean; engine?:PlanEngine }) {
+ const modelVersion=engine===RISK_ENGINE_VERSION?RISK_ENGINE_VERSION:PLAN_MODEL_VERSION;
  const [owner,setOwner]=useState('');
  const [snapshots,setSnapshots]=useState<Snapshot[]>([]);
  const [name,setName]=useState('');
@@ -49,8 +52,8 @@ export default function PrivatePlanSnapshots({ input, onLoad, hasUnappliedBudget
      const clean=validatePlanInput(input);
      const client=supabaseBrowser();const {data,error:authError}=await client.auth.getUser();
      if(authError||!data.user||data.user.id!==owner)throw new Error('Please sign in again before saving.');
-     const {error:insertError}=await client.from('private_inventory_plans').insert({name:title,source:clean.source,items:clean.items,budget:clean.budget,risk:clean.risk,as_of:clean.asOf,model_version:PLAN_MODEL_VERSION});
-     if(insertError)throw new Error('Could not save the plan. Please try again.');
+     const {error:insertError}=await client.from('private_inventory_plans').insert({name:title,source:clean.source,items:clean.items,budget:clean.budget,risk:clean.risk,as_of:clean.asOf,model_version:modelVersion});
+     if(insertError)throw new Error(insertError.code==='23514'&&modelVersion===RISK_ENGINE_VERSION?'Saved-plan storage has not been upgraded for the v5 engine yet (run docs/security/allow-risk-cvar-v5.sql in Supabase). Switch the planning engine to v4 to save in the meantime.':'Could not save the plan. Please try again.');
      setName('');setNotice('Inputs saved to your account. Results are recalculated when reopened.');await refresh();
    }catch(e){setError(e instanceof Error?e.message:'Could not save the plan.');}finally{setBusy(false);}
  }
@@ -67,9 +70,9 @@ export default function PrivatePlanSnapshots({ input, onLoad, hasUnappliedBudget
  }
  function load(snapshot:Snapshot){
    try{
-     if(snapshot.model_version!==PLAN_MODEL_VERSION && snapshot.model_version!=='scenario-greedy-v2' && snapshot.model_version!=='scenario-grid-v3')throw new Error('This snapshot uses an unsupported model version and cannot be opened here.');
+     if(snapshot.model_version!==PLAN_MODEL_VERSION && snapshot.model_version!==RISK_ENGINE_VERSION && snapshot.model_version!=='scenario-greedy-v2' && snapshot.model_version!=='scenario-grid-v3')throw new Error('This snapshot uses an unsupported model version and cannot be opened here.');
      const clean=validatePlanInput({items:snapshot.items,budget:Number(snapshot.budget),risk:snapshot.risk,asOf:snapshot.as_of,source:snapshot.source});
-     onLoad(clean);setError('');setNotice(`Loaded “${snapshot.name}”. ${snapshot.model_version===PLAN_MODEL_VERSION?'':'Recalculated with the newer allocation model. '}Review the date and assumptions before using the results.`);
+     onLoad(clean);setError('');setNotice(`Loaded “${snapshot.name}”. ${snapshot.model_version===modelVersion?'':'Recalculated with the currently selected planning engine. '}Review the date and assumptions before using the results.`);
    }catch(e){setError(e instanceof Error?e.message:'Could not open the saved plan.');setNotice('');}
  }
  return <section id="saved-plans" className="panel saved-plans" aria-labelledby="saved-plans-heading">

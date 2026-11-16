@@ -10,6 +10,7 @@ async function main(){
  assert.equal((await post({...input,items:[{...constrained,minOrderUnits:9}]})).status,400);assert.equal((await post({...input,items:[{...constrained,fixedOrderFee:-1}]})).status,400);
  const weighted={...input.items[0],bookingWeight:.2};const weightedResult=await post({...input,items:[weighted]});assert.equal(weightedResult.status,200);assert.equal(weightedResult.body.model,'scenario-grid-v4-experimental-blend');assert.equal(weightedResult.body.recommendations[0].bookingWeight,.2);assert.notEqual(weightedResult.body.recommendations[0].forecast,(await post({...input,items:[input.items[0]]})).body.recommendations[0].forecast);
  for(const invalid of [-1,1.1,'0.2',{},true])assert.equal((await post({...input,items:[{...input.items[0],bookingWeight:invalid}]})).status,400);
+ const riskPlan=await post({...input,engine:'risk-cvar-v5'});assert.equal(riskPlan.status,200,JSON.stringify(riskPlan.body));assert.equal(riskPlan.body.model,'risk-cvar-v5');assert.ok(riskPlan.body.summary.spend<=input.budget);assert.ok(riskPlan.body.optimization.upperBound>=riskPlan.body.optimization.objective);assert.ok(riskPlan.body.summary.cvar10<=riskPlan.body.summary.expectedProfit);assert.equal(riskPlan.body.recommendations.length,input.items.length);assert.equal((await post({...input,engine:'other'})).status,400);
  console.log('Planning API integration checks passed');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
