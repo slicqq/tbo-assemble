@@ -19,7 +19,7 @@ Download the template from the dashboard. Its example row is synthetic. Replace 
 | signal | Manually estimated market multiplier 0–5; 1 means no change |
 | cancellations | Assumed cancellation fraction 0–1, e.g. 0.12 for 12% |
 | volatility | Assumed demand downside/upside fraction 0–1 |
-| soldOut | Percent of searches that were sold out, 0–100 |
+| soldOut | Percent of searches that were sold out, 0–100 (a sold-out-days share is an acceptable proxy when searches are spread evenly) |
 | integration | Supplier strategy label supplied by you, not an actual integration |
 | timing | Purchase timing label supplied by you, not optimized |
 
@@ -41,5 +41,14 @@ The strategy suggestion is a simple decision rule, not a supplier integration or
 
 - `minOrderUnits`: optional whole-number minimum for a single item and period, between 1 and its capacity. The model selects either 0 or at least this amount. Blank means 1, not a verified contractual term. A zero-capacity row may leave the field blank and cannot be purchased.
 - `fixedOrderFee`: optional non-negative one-time INR fee (maximum ₹1 crore), charged once per opportunity if any units are bought. Blank means zero. It is included in budget and every profit scenario and assumed non-refundable; it is not included in the unsold-unit exposure metric. Fee is per row, not a shared supplier-wide fee. Taxes and other fees must be included manually in inputs where appropriate; no automatic tax or contract validation is performed.
+
+### Portfolio risk engine (risk-cvar-v5) inputs
+
+These are optional and ignored by the legacy v4 engine. See [risk-engine.md](risk-engine.md).
+
+- `allotmentBuy`: INR price per unit for flexible allotment inventory (held with a deposit; unused units are released at cut-off). Leave blank when no allotment is offered. The engine then plans only pre-paid units.
+- `allotmentDepositPct`: fraction 0–1 of `allotmentBuy` paid up-front per held unit. It counts against the budget and is forfeited on release. Blank means 0.25 when `allotmentBuy` is set.
+- `allotmentCapacity`: whole number 0–500 of allotment units the supplier will hold. The planner caps it at `capacity`.
+- `soldOutSearches`: measured count of searches that found the product sold out. When supplied, the lost bookings are soldOutSearches × conversion. Otherwise the engine uses the capped estimate based on `soldOut`. This is the most valuable field to collect from booking-engine logs.
 
 The on-page Supplier terms controls edit the current in-memory inputs. Saving a plan explicitly also stores those inputs; loading an older version recalculates with the new method. The manual quote-review panel changes the planner only when you explicitly apply a quote; cancellation and fee text are not automatically transferred.
