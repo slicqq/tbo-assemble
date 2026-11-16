@@ -1,4 +1,5 @@
 import type { Opportunity } from './procurement-core';
+import { volatilityOf } from './learned-demand';
 
 /**
  * Correlated Monte-Carlo season scenarios for the portfolio risk engine (risk-cvar-v5).
@@ -81,6 +82,8 @@ export type ScenarioSet = {
   /** Per scenario: 0 = normal, 1 = at least one regional shock somewhere, 2 = global shock. */
   shock: Uint8Array;
   regions: string[];
+  /** Realised price sensitivity ÷ the planner's assumed elasticity (1 in the planned world). */
+  elasticityMultiplier: number;
 };
 
 /**
@@ -103,8 +106,10 @@ export type ScenarioAssumptions = {
   cancellationMultiplier: number;
   /** Realised demand volatility ÷ supplied volatility. */
   volatilityMultiplier: number;
+  /** Realised price elasticity ÷ the planner's elasticity (e.g. 0.4 = customers far less price-sensitive than assumed). */
+  elasticityMultiplier: number;
 };
-export const DEFAULT_SCENARIO_ASSUMPTIONS: ScenarioAssumptions = { ...RISK_ASSUMPTIONS, demandBias: 1, priceBias: 1, cancellationMultiplier: 1, volatilityMultiplier: 1 };
+export const DEFAULT_SCENARIO_ASSUMPTIONS: ScenarioAssumptions = { ...RISK_ASSUMPTIONS, demandBias: 1, priceBias: 1, cancellationMultiplier: 1, volatilityMultiplier: 1, elasticityMultiplier: 1 };
 
 export function buildScenarioSet(items: Opportunity[], count: number, seed: number, overrides: Partial<ScenarioAssumptions> = {}): ScenarioSet {
   if (!Number.isInteger(count) || count < 20 || count > 20000) throw new Error('Scenario count must be a whole number from 20 to 20,000.');
@@ -144,7 +149,7 @@ export function buildScenarioSet(items: Opportunity[], count: number, seed: numb
   const demand: Float64Array[] = [], price: Float64Array[] = [];
   items.forEach((item, i) => {
     const random = seededRandom(seed ^ hashString('item:' + item.id));
-    const sigma = Math.max(0, Math.min(1.5, item.volatility * A.volatilityMultiplier));
+    const sigma = Math.max(0, Math.min(1.5, volatilityOf(item) * A.volatilityMultiplier));
     const baseCancel = Math.max(0, Math.min(0.95, item.cancellations));
     const zRegion = regionZ.get(regions[i])!, sRegion = regionShock.get(regions[i])!;
     const d = new Float64Array(count), p = new Float64Array(count);
@@ -162,5 +167,5 @@ export function buildScenarioSet(items: Opportunity[], count: number, seed: numb
     }
     demand.push(d); price.push(p);
   });
-  return { count, seed, demand, price, shock: shockFlag, regions };
+  return { count, seed, demand, price, shock: shockFlag, regions, elasticityMultiplier: A.elasticityMultiplier };
 }

@@ -127,17 +127,16 @@ export default function Home() {
             <span className="font-display text-xl font-bold">tbo assemble</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
-            {["Features", "How it Works", "Feedback", "Impact"].map((l) => (
-              <Link key={l} href={`#${l.toLowerCase().replace(/ /g, "-")}`} className="rounded-full px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+            {[["Inventory optimization", "#inventory-optimization"], ["Open the planner", "/inventory"], ["TBO Assemble (3.0)", "#group-travel"], ["Flight intelligence", "/flight-intelligence"]].map(([l, href]) => (
+              <Link key={l} href={href} className="rounded-full px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
                 {l}
               </Link>
             ))}
           </nav>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/inventory">Inventory intelligence</Link></Button>
             <Button asChild variant="ghost" className="hidden sm:inline-flex"><Link href="/login">Sign in</Link></Button>
-            <Button asChild className="hidden sm:inline-flex"><Link href="/login">Get started</Link></Button>
+            <Button asChild className="hidden sm:inline-flex"><Link href="/inventory">Open the planner</Link></Button>
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation menu" aria-expanded={mobileNav ? "true" : "false"}>
               {mobileNav ? <X /> : <Menu />}
             </Button>
@@ -146,15 +145,15 @@ export default function Home() {
         {mobileNav && (
           <div className="border-t px-6 py-3 md:hidden">
             {[
+              { href: "/inventory", label: "Open the planner (VoyageHack 4.0)" },
+              { href: "#inventory-optimization", label: "Inventory optimization" },
+              { href: "#group-travel", label: "TBO Assemble (VoyageHack 3.0)" },
               { href: "#features", label: "Features" },
               { href: "#how-it-works", label: "How it Works" },
-              { href: "#feedback", label: "Feedback" },
               { href: "#impact", label: "Impact" },
-              { href: "/login", label: "Sign in / create account" },
-              { href: "/inventory", label: "Inventory intelligence" },
               { href: "/flight-intelligence", label: "Flight intelligence" },
               { href: "/dashboard", label: "Dashboard" },
-              { href: "/login", label: "Get started" },
+              { href: "/login", label: "Sign in / create account" },
             ].map((l) => (
               <Link key={l.href} href={l.href} onClick={() => setMobileNav(false)} className="block rounded-full px-3 py-2 text-sm font-medium hover:bg-accent">
                 {l.label}
@@ -165,23 +164,70 @@ export default function Home() {
       </header>
 
       <main>
-        {/* ─── Hero ────────────────────────────────────── */}
-        <section className="mx-auto grid max-w-6xl items-center gap-16 px-6 pb-24 pt-16 lg:grid-cols-[1.1fr_1fr] lg:pt-20">
+        {/* ─── VoyageHack 4.0: Inventory Optimization for TBO.com ───────────── */}
+        <section id="inventory-optimization" aria-labelledby="hero-title" className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-16 lg:grid-cols-[1.15fr_1fr] lg:pt-20">
+          <div>
+            <Link href="/inventory" className="inline-flex items-center gap-2 rounded-full border border-[rgba(37,99,235,0.35)] bg-[rgba(37,99,235,0.08)] px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-[rgba(37,99,235,0.14)]">
+              VoyageHack 4.0 · Inventory Optimization for TBO.com · Team IIITDards <ChevronRight className="size-3.5" />
+            </Link>
+            <h1 id="hero-title" className="mt-6 text-4xl font-bold leading-[1.04] sm:text-5xl lg:text-[3.6rem]">
+              Buy the right inventory, at the right time,{" "}
+              <span className="bg-[linear-gradient(transparent_62%,var(--ill-yellow)_62%,var(--ill-yellow)_92%,transparent_92%)] px-1 [box-decoration-break:clone]">within the right budget</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
+              A procurement planner for hotel and flight pre-buys and allotments. It forecasts unconstrained demand from bookings, searches and sold-outs, then chooses quantities, contract mix, timing and selling prices that maximise risk-adjusted profit, and it never spends more than the maximum budget.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Button asChild size="lg"><Link href="/inventory">Open the planner <ArrowRight /></Link></Button>
+              <Button asChild size="lg" variant="outline"><Link href="/research/risk-engine.md">How it decides</Link></Button>
+            </div>
+            <ul className="mt-10 grid gap-3 sm:grid-cols-2" aria-label="What the planner does">
+              {[
+                ["Predict demand", "Seasonality, growth, signals and price sensitivity learned from history and checked against \u201csame month last year\u201d before the planner may use them."],
+                ["Optimise investment", "A hard maximum budget across hotels, flights, destinations and travel periods, with pre-paid versus allotment contracts, supplier capacity and minimum orders."],
+                ["Maximise profitability", "Quantities, buy timing and selling prices, including stock already held, chosen together."],
+                ["Manage risk", "Worst-10% profit (CVaR) over 500 correlated seasons, an availability target, and a check against 11 \u201cwhat if the model is wrong\u201d worlds."],
+              ].map(([title, body]) => (
+                <li key={title} className="rounded-2xl border bg-surface/60 p-4">
+                  <p className="text-sm font-semibold">{title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <figure className="rounded-[24px] border bg-surface/60 p-6" aria-label="Illustration: profit across simulated seasons, with the worst 10% highlighted">
+            <svg viewBox="0 0 360 220" role="img" aria-hidden="true" className="h-auto w-full">
+              <line x1="20" y1="180" x2="344" y2="180" stroke="currentColor" strokeOpacity=".25" />
+              {[6, 10, 16, 24, 36, 52, 70, 88, 104, 118, 126, 128, 122, 110, 94, 76, 58, 42, 28, 18, 11, 6].map((h, i) => (
+                <rect key={i} x={24 + i * 14.6} y={180 - h} width="11" height={h} rx="2" fill={i < 4 ? "#ef4444" : "#2563eb"} fillOpacity={i < 4 ? 0.85 : 0.75} />
+              ))}
+              <line x1="83" y1="40" x2="83" y2="184" stroke="#ef4444" strokeDasharray="4 4" />
+              <text x="26" y="34" fontSize="11" fill="#ef4444">Worst 10% of seasons (CVaR)</text>
+              <text x="200" y="34" fontSize="11" fill="currentColor" fillOpacity=".7">Typical season</text>
+              <text x="24" y="204" fontSize="11" fill="currentColor" fillOpacity=".6">Loss</text>
+              <text x="300" y="204" fontSize="11" fill="currentColor" fillOpacity=".6">Profit</text>
+            </svg>
+            <figcaption className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Every plan is scored on simulated seasons with correlated demand, price and cancellation shocks. The risk slider trades expected profit for a better worst case. Illustration; open the planner for live numbers.
+            </figcaption>
+          </figure>
+        </section>
+
+        {/* ─── VoyageHack 3.0 (same team): TBO Assemble, group travel ───────── */}
+        <section id="group-travel" aria-labelledby="group-travel-title" className="mx-auto grid max-w-6xl items-center gap-16 px-6 pb-24 pt-10 lg:grid-cols-[1.1fr_1fr]">
           <div>
             <Link href="/event/techconnect-summit-2026" className="inline-flex items-center gap-2 rounded-full border border-[rgba(255,200,26,0.35)] bg-[rgba(255,200,26,0.14)] px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-[rgba(255,200,26,0.24)]">
-              VoyageHack 3.0 · Team IIITDards · Built for TBO <ChevronRight className="size-3.5" />
+              Also from Team IIITDards · VoyageHack 3.0 · TBO Assemble <ChevronRight className="size-3.5" />
             </Link>
-            <h1 className="mt-6 text-5xl font-bold leading-[1.02] sm:text-6xl lg:text-[4.25rem]">
+            <h2 id="group-travel-title" className="mt-6 text-4xl font-bold leading-[1.04] sm:text-5xl">
               The operating system for{" "}
               <span className="bg-[linear-gradient(transparent_62%,var(--ill-yellow)_62%,var(--ill-yellow)_92%,transparent_92%)] px-1 [box-decoration-break:clone]">group travel</span>
-            </h1>
+            </h2>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
               Transform hotel room block management from spreadsheet chaos into an intelligent, automated workflow. Parse contracts with AI, allocate guests visually, and protect your revenue — all in one platform.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Button asChild size="lg"><Link href="/login">Create your account <ArrowRight /></Link></Button>
-              <Button asChild size="lg" variant="secondary"><Link href="/inventory"><BarChart3 /> View synthetic demo</Link></Button>
-              <Button asChild size="lg" variant="outline"><Link href="/inventory">Inventory intelligence <ArrowRight /></Link></Button>
+              <Button asChild size="lg" variant="secondary"><Link href="/login">Try TBO Assemble <ArrowRight /></Link></Button>
             </div>
             <div className="mt-10 flex items-center gap-4 border-t pt-6">
               <AvatarStack names={["Priya Sharma", "Arjun Mehta", "Neha Kapoor", "Ravi Kumar"]} max={4} size="size-8" />
@@ -236,7 +282,7 @@ export default function Home() {
         </section>
 
         {/* ─── Features ───────────────────────────────── */}
-        <Section id="features" eyebrow="Core capabilities" title="Four pillars of intelligence" description="Purpose-built features for the core pain points of group travel inventory across India's MICE and wedding industry.">
+        <Section id="features" eyebrow="TBO Assemble (VoyageHack 3.0) · Core capabilities" title="Four pillars of intelligence" description="Purpose-built features for the core pain points of group travel inventory across India's MICE and wedding industry.">
           <div className="grid gap-4 lg:grid-cols-5">
             <FeatureBlock tone="yellow" tag="AI" title="GenAI contract parsing" className="lg:col-span-3"
               description="Upload your hotel contract (PDF, Word, Excel, or image) and event invitation. The AI pipeline extracts room blocks, negotiated rates, dates, attrition penalties and theme colours — and generates a branded microsite in under 60 seconds.">
@@ -282,7 +328,7 @@ export default function Home() {
         </Section>
 
         {/* ─── How it works ───────────────────────────── */}
-        <Section id="how-it-works" tone="muted" eyebrow="Workflow" title="From contract to microsite in minutes" description="A streamlined three-step workflow that replaces weeks of manual coordination.">
+        <Section id="how-it-works" tone="muted" eyebrow="TBO Assemble (VoyageHack 3.0) · Workflow" title="From contract to microsite in minutes" description="A streamlined three-step workflow that replaces weeks of manual coordination.">
           <ol className="grid gap-4 md:grid-cols-3">
             {steps.map((s) => (
               <li key={s.step} className="rounded-[28px] border bg-card p-3">
@@ -298,7 +344,7 @@ export default function Home() {
         </Section>
 
         {/* ─── Use cases ──────────────────────────────── */}
-        <Section eyebrow="Use cases" title="Built for India's biggest occasions" description="Whether it's a 500-guest destination wedding in Udaipur or a 3-day corporate summit in Mumbai, TBO Assemble handles the complexity.">
+        <Section eyebrow="TBO Assemble (VoyageHack 3.0) · Use cases" title="Built for India's biggest occasions" description="Whether it's a 500-guest destination wedding in Udaipur or a 3-day corporate summit in Mumbai, TBO Assemble handles the complexity.">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {useCases.map((uc) => {
               const p = photo(uc.k);
@@ -313,7 +359,7 @@ export default function Home() {
         </Section>
 
         {/* ─── Testimonials ───────────────────────────── */}
-        <Section id="feedback" tone="muted" eyebrow="Beta feedback" title="What our early testers say" description="We shared this prototype with travel professionals for hands-on testing. Here's their feedback.">
+        <Section id="feedback" tone="muted" eyebrow="TBO Assemble (VoyageHack 3.0) · Beta feedback" title="What our early testers say" description="We shared this prototype with travel professionals for hands-on testing. Here's their feedback.">
           <div className="grid gap-4 md:grid-cols-3">
             {[
               { quote: "The drag-and-drop room allocator is a game-changer. What used to take me hours on Excel took minutes here. Just needs bulk upload support and it's perfect.", name: "Priya Sharma", role: "Wedding Planner · Beta Tester", location: "Jaipur" },
@@ -380,7 +426,7 @@ export default function Home() {
         </Section>
 
         {/* ─── Comparison ─────────────────────────────── */}
-        <Section tone="muted" align="center" eyebrow="Why switch" title="Manual coordination vs TBO Assemble" description="How TBO Assemble replaces manual workflows at every step.">
+        <Section tone="muted" align="center" eyebrow="TBO Assemble (VoyageHack 3.0) · Why switch" title="Manual coordination vs TBO Assemble" description="How TBO Assemble replaces manual workflows at every step.">
           <div className="mx-auto max-w-4xl overflow-hidden rounded-2xl border bg-card">
             <Table>
               <TableHeader>

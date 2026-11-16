@@ -41,22 +41,22 @@ export const metadata: Metadata = {
     template: "%s | TBO Inventory Intelligence",
   },
   description:
-    "An illustrative travel inventory procurement, demand forecasting and budget allocation dashboard.",
+    "VoyageHack 4.0 (Team IIITDards): a risk-aware procurement planner for TBO.com. It forecasts travel demand and allocates a hard maximum budget across hotel and flight pre-buys and allotments to maximise risk-adjusted profit.",
   keywords: [
-    "group travel",
-    "MICE",
-    "hotel room block",
-    "wedding management",
+    "inventory optimization",
+    "demand forecasting",
+    "procurement planning",
+    "allotments",
+    "CVaR",
     "TBO",
+    "VoyageHack 4.0",
     "travel technology",
-    "attrition management",
-    "room allocation",
   ],
   authors: [{ name: "TBO Assemble" }],
   openGraph: {
-    title: "TBO Assemble — Smart Group Travel OS",
+    title: "TBO Inventory Intelligence — VoyageHack 4.0",
     description:
-      "AI-powered hotel room block management for MICE events and destination weddings. Replace spreadsheets with intelligence.",
+      "Buy the right inventory, at the right time, within the right budget: demand forecasting and risk-aware procurement planning for TBO.com.",
     type: "website",
     siteName: "TBO Assemble",
     locale: "en_IN",
@@ -71,9 +71,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "TBO Assemble — Smart Group Travel OS",
+    title: "TBO Inventory Intelligence — VoyageHack 4.0",
     description:
-      "AI-powered hotel room block management for MICE events and destination weddings.",
+      "Demand forecasting and risk-aware procurement planning for TBO.com.",
   },
   robots: { index: true, follow: true },
   icons: {

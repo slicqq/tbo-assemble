@@ -1,10 +1,17 @@
 /** Deterministic illustrative model. Not calibrated to TBO data. */
+import type { DemandHistoryPoint } from './learned-demand';
 export type Opportunity = { id:string; name:string; destination:string; kind:'Hotel'|'Flight'; period:string; buy:number; referencePrice:number; capacity:number; bookings:number; searches:number; conversion:number; seasonal:number; signal:number; cancellations:number; volatility:number; soldOut:number; integration:string; timing:string; existingStock?:number; recoveryPct?:number; previousBuy?:number; quoteExpiry?:string; previousBookings?:number; previousSearches?:number; minOrderUnits?:number; fixedOrderFee?:number; bookingWeight?:number;
+ /** Optional price elasticity of demand (risk-cvar-v5); learned from `history` prices when available, else a prior by kind. */
+ priceElasticity?:number;
+ /** Optional monthly history (risk-cvar-v5 learned demand): seasonality, growth, signal effect, price sensitivity and forecast risk are learned from it. */
+ history?:DemandHistoryPoint[];
  /** Optional flexible-allotment terms (risk-cvar-v5): net cost per unit if taken as an allotment, deposit forfeited per unsold unit, and units the supplier offers on allotment. */
  allotmentBuy?:number; allotmentDepositPct?:number; allotmentCapacity?:number;
  /** Optional measured searches that found the product sold out (risk-cvar-v5 demand recovery). */
  soldOutSearches?:number };
 export type PlanEngine = 'scenario-grid-v4' | 'risk-cvar-v5';
+/** What the budget caps (risk-cvar-v5). 'cash': every committed rupee — pre-paid cost plus the full value of allotments (the literal "maximum input budget"). 'capital-at-risk': pre-paid cost plus allotment deposits only. */
+export type BudgetBasis = 'cash' | 'capital-at-risk';
 export const opportunities: Opportunity[] = [
  {id:'goa',quoteExpiry:'2026-11-18',previousBuy:6900,previousBookings:108,previousSearches:2650,existingStock:12,recoveryPct:.15,name:'North Goa beach hotels',destination:'Goa',kind:'Hotel',period:'Dec 2026',buy:6400,referencePrice:9200,capacity:160,allotmentBuy:6850,allotmentDepositPct:.25,allotmentCapacity:60,bookings:125,searches:3100,conversion:.045,seasonal:1.18,signal:1.08,cancellations:.12,volatility:.28,soldOut:24,integration:'Direct contract',timing:'Buy now'},
  {id:'dubai',quoteExpiry:'2026-12-10',previousBuy:7300,previousBookings:90,previousSearches:2450,existingStock:5,recoveryPct:.2,name:'Dubai city hotels',destination:'Dubai',kind:'Hotel',period:'Jan 2027',buy:8200,referencePrice:11700,capacity:135,bookings:102,searches:2500,conversion:.046,seasonal:1.12,signal:1.06,cancellations:.1,volatility:.24,soldOut:18,integration:'Supplier API',timing:'Buy now'},
@@ -17,10 +24,10 @@ export const opportunities: Opportunity[] = [
 ];
 export type PlanRow = Opportunity & { forecast:number; price:number; qty:number; spend:number; expectedProfit:number; downsideProfit:number; baseProfit:number; upsideProfit:number; expectedSold:number; expectedUnsold:number; unsoldExposure:number; objective:number; purchaseTiming:string; timingReason:string; strategy:string; strategyReason:string;
  /** risk-cvar-v5 only. `qty` is then the total committed units = prepaidQty + allotQty, and `spend` is capital at risk. */
- engine?:PlanEngine; /** risk-cvar-v5 availability target (0–0.99) the plan was built with; what-if re-plans reuse it. */ serviceTarget?:number; prepaidQty?:number; allotQty?:number; prepaidSpend?:number; allotSpend?:number; pLoss?:number; tailProfit?:number; lostDemand?:number; servedShare?:number;
+ engine?:PlanEngine; /** risk-cvar-v5: where the forecast came from and the price elasticity used. */ demandSource?:{kind:'learned'|'seasonal-naive'|'formula';label:string;detail:string}; priceElasticity?:number; budgetBasis?:BudgetBasis; /** risk-cvar-v5: why the engine chose this selling price, in plain English. */ priceReason?:string; /** risk-cvar-v5 availability target (0–0.99) the plan was built with; what-if re-plans reuse it. */ serviceTarget?:number; prepaidQty?:number; allotQty?:number; prepaidSpend?:number; allotSpend?:number; pLoss?:number; tailProfit?:number; lostDemand?:number; servedShare?:number;
  coverage?:{need:number;served:number;unmet:number;highUnmet:number};
  buyWindow?:{leadDays:number;optimalLead:number;windowStart:number;windowEnd:number;status:'early'|'in-window'|'late'|'past';label:string;reason:string} };
-export type PlanOptions = { asOf?:string; engine?:PlanEngine; scenarioCount?:number; evaluationCount?:number; seed?:number; /** risk-cvar-v5: also score the legacy v4 plan on the same scenarios (used by the risk panel). */ compareLegacy?:boolean; /** risk-cvar-v5: minimum expected share (0–0.99) of modelled demand to serve; 0/undefined = off. */ serviceTarget?:number; /** risk-cvar-v5: choose selling prices jointly with quantities (default true). */ jointPricing?:boolean };
+export type PlanOptions = { asOf?:string; engine?:PlanEngine; scenarioCount?:number; evaluationCount?:number; seed?:number; /** risk-cvar-v5: also score the legacy v4 plan on the same scenarios (used by the risk panel). */ compareLegacy?:boolean; /** risk-cvar-v5: minimum expected share (0–0.99) of modelled demand to serve; 0/undefined = off. */ serviceTarget?:number; /** risk-cvar-v5: choose selling prices jointly with quantities (default true). */ jointPricing?:boolean; /** risk-cvar-v5: what the budget caps (default 'cash'). */ budgetBasis?:BudgetBasis };
 const dayMs=86400000;
 export function timingFor(o:Opportunity, asOf:string) {
  if (!o.quoteExpiry) return {purchaseTiming:'Verify quote', timingReason:'No expiry date supplied; confirm the quote before buying.', expired:false};

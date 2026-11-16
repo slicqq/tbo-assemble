@@ -25,6 +25,8 @@ export const MODEL_RISK_WORLDS: readonly ModelRiskWorld[] = [
   { id: 'demand-low', label: 'Demand 15% below forecast', description: 'Every product sells 15% less than forecast (e.g. a soft season).', overrides: { demandBias: 0.85 } },
   { id: 'demand-high', label: 'Demand 15% above forecast', description: 'Every product sells 15% more than forecast; under-buying is the risk.', overrides: { demandBias: 1.15 } },
   { id: 'price-low', label: 'Selling prices 5% lower', description: 'Competitor or rate-parity pressure cuts achievable prices by 5%.', overrides: { priceBias: 0.95 } },
+  { id: 'price-insensitive', label: 'Customers less price-sensitive', description: 'Demand reacts to price at 0.4× the assumed elasticity — about the −1.2 that scenario-grid-v4 assumes.', overrides: { elasticityMultiplier: 0.4 } },
+  { id: 'price-sensitive', label: 'Customers more price-sensitive', description: 'Demand reacts to price at 1.5× the assumed elasticity.', overrides: { elasticityMultiplier: 1.5 } },
   { id: 'cancellations', label: 'Cancellations ×1.5', description: 'Cancellation rates are 50% higher than supplied.', overrides: { cancellationMultiplier: 1.5 } },
   { id: 'volatile', label: 'Demand 1.5× more volatile', description: 'Season-to-season swings are 50% larger than assumed.', overrides: { volatilityMultiplier: 1.5 } },
   { id: 'correlated', label: 'Destinations move together', description: 'Same-region correlation 0.80 and cross-region 0.40 (planned: 0.50 / 0.15).', overrides: { globalWeight: 0.4, regionWeight: 0.4 } },
@@ -82,7 +84,7 @@ function decisionsFrom(items: Opportunity[], rows: PlanRow[], allotments: boolea
 export function checkModelRisk(items: Opportunity[], budget: number, risk: number, options: ModelRiskOptions = {}): ModelRiskReport {
   const r = Math.min(1, Math.max(0, Number.isFinite(risk) ? risk : 0));
   const { planRows, legacyRows, worlds = MODEL_RISK_WORLDS, oracle = true, ...planOptions } = options;
-  const base = { asOf: planOptions.asOf, scenarioCount: planOptions.scenarioCount, evaluationCount: planOptions.evaluationCount, seed: planOptions.seed };
+  const base = { asOf: planOptions.asOf, scenarioCount: planOptions.scenarioCount, evaluationCount: planOptions.evaluationCount, seed: planOptions.seed, budgetBasis: planOptions.budgetBasis };
   const plan = decisionsFrom(items, planRows ?? optimizePortfolioRisk(items, budget, r, planOptions).rows, true);
   const legacy = decisionsFrom(items, legacyRows ?? optimizePortfolio(items, budget, r, { asOf: planOptions.asOf, engine: 'scenario-grid-v4' }).rows, false);
   const objectiveOf = (m: RiskMetrics) => (1 - r) * m.expectedProfit + r * m.cvar;

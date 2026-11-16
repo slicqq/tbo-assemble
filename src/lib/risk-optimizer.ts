@@ -1,7 +1,8 @@
-import { timingFor, type Opportunity, type PlanOptions, type PlanRow } from './procurement-core';
+import { timingFor, type BudgetBasis, type Opportunity, type PlanOptions, type PlanRow } from './procurement-core';
 import { buildScenarioSet, type ScenarioAssumptions, type ScenarioSet } from './risk-scenarios';
 import { forecastUnconstrained, lostBookings } from './demand-unconstraining';
 import { buyWindowFor } from './buy-window';
+import { demandSourceOf, elasticityOf, priceResponse, volatilityOf } from './learned-demand';
 
 /**
  * Portfolio risk engine (risk-cvar-v5).
@@ -9,7 +10,7 @@ import { buyWindowFor } from './buy-window';
  *   maximise  (1 − r) · E[season profit]  +  r · CVaR10%[season profit]
  *
  * over whole units of pre-paid inventory and (optionally) flexible allotments, subject to the
- * hard budget (capital at risk), supplier capacity, minimum order, fixed order fee and quote expiry.
+ * hard budget (cash committed by default, or capital at risk), supplier capacity, minimum order, fixed order fee and quote expiry.
  * Season profit is summed across products in each correlated scenario, so diversification and
  * shared shocks are priced in. `r` is the existing 0–0.8 risk-appetite setting.
  *
@@ -20,14 +21,18 @@ import { buyWindowFor } from './buy-window';
 export const RISK_ENGINE_VERSION = 'risk-cvar-v5' as const;
 export const RISK_ENGINE_DEFAULTS = { alpha: 0.1, scenarioCount: 500, evaluationCount: 2000, seed: 20261116 } as const;
 export const DEFAULT_ALLOTMENT_DEPOSIT = 0.25;
-const PRICE_MULTIPLIERS = [1, 0.95, 1.05, 0.9, 1.1]; // reference price wins ties
-const PRICE_ELASTICITY = -1.2; // same assumption as scenario-grid-v4
+/**
+ * Candidate selling prices: the reference price ±15% in 2.5% steps (reference first, so it wins ties).
+ * Demand responds with the product's own price elasticity (learned-demand.ts: learned from price history, otherwise
+ * the Lerner-implied prior), kinked at the reference price (mark-ups lose demand faster than discounts win it).
+ */
+const PRICE_MULTIPLIERS = [1, 0.975, 1.025, 0.95, 1.05, 0.925, 1.075, 0.9, 1.1, 0.875, 1.125, 0.85, 1.15];
 const MAX_GREEDY_STEPS = 12000;
 
 export type Decision = { prepaid: number; allotment: number; price: number };
 export type RiskMetrics = { spend: number; expectedProfit: number; cvar: number; valueAtRisk: number; pLoss: number; p05: number; p95: number; servedShare: number; expectedUnsold: number };
 export type RiskSummary = RiskMetrics & {
-  engine: typeof RISK_ENGINE_VERSION; alpha: number; scenarioCount: number; evaluationCount: number; seed: number;
+  engine: typeof RISK_ENGINE_VERSION; alpha: number; scenarioCount: number; evaluationCount: number; seed: number; budgetBasis: BudgetBasis;
   servedShareBefore: number; units: number; prepaidUnits: number; allotmentUnits: number;
   histogram: { from: number; to: number; count: number; tail: boolean }[];
   legacy?: RiskMetrics;
@@ -64,27 +69,47 @@ type Model = {
   item: Opportunity; price: number; demand: Float64Array; gross: Float64Array; priceMultiplier: Float64Array;
   buy: number; salvage: number; allotBuy: number; deposit: number; capPrepaid: number; capAllot: number; cap: number;
   minimum: number; fee: number; stock: number; expired: boolean;
+  /** Budget used per allotment unit: its full net cost ('cash') or only its deposit ('capital-at-risk'). */
+  allotCapital: number;
+  /** Per scenario: value of the stock already held at this price minus its value at the reference price (decision-independent). */
+  stockTerm: Float64Array;
+  /**
+   * Availability is measured against max(demand at this price, demand at today's reference price), i.e. gross × marketScale.
+   * Customers priced out by a mark-up therefore count as not served, and a price cut cannot push the share above 100%.
+   */
+  marketScale: number;
   /** Availability-target service value μ (₹ per unit sold) added to the optimisation objective only; 0 for reporting. */
   serviceValue: number;
 };
 
 const clamp = (x: number, lo: number, hi: number) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : lo);
 
-function buildModel(item: Opportunity, index: number, set: ScenarioSet, price: number, asOf: string, serviceValue = 0): Model {
-  const base = forecastUnconstrained(item) * Math.pow(price / item.referencePrice, PRICE_ELASTICITY);
+function buildModel(item: Opportunity, index: number, set: ScenarioSet, price: number, asOf: string, serviceValue = 0, basis: BudgetBasis = 'cash'): Model {
+  const planned = forecastUnconstrained(item), elasticity = elasticityOf(item) * (set.elasticityMultiplier ?? 1);
+  const base = planned * priceResponse(price, item.referencePrice, elasticity);
   const stock = Math.max(0, item.existingStock || 0);
-  const demand = new Float64Array(set.count), gross = new Float64Array(set.count);
-  for (let s = 0; s < set.count; s++) { gross[s] = base * set.demand[index][s]; demand[s] = Math.max(0, gross[s] - stock); }
+  const salvage = item.buy * clamp(item.recoveryPct ?? 0, 0, 1), service = Math.max(0, Number.isFinite(serviceValue) ? serviceValue : 0);
+  const refPrice = Math.max(1, Math.round(item.referencePrice)), refBase = planned * priceResponse(refPrice, item.referencePrice, elasticity);
+  const demand = new Float64Array(set.count), gross = new Float64Array(set.count), stockTerm = stock > 0 ? new Float64Array(set.count) : zerosOf(set.count);
+  for (let s = 0; s < set.count; s++) {
+    gross[s] = base * set.demand[index][s]; demand[s] = Math.max(0, gross[s] - stock);
+    if (stock > 0) {
+      // Stock already held sells first, at the chosen price. A price change re-prices those units too, so the
+      // objective counts their revenue relative to selling them at the reference price (unsold stock is salvaged).
+      const soldNow = Math.min(stock, gross[s]), soldRef = Math.min(stock, refBase * set.demand[index][s]), multiplier = set.price[index][s];
+      stockTerm[s] = soldNow * (price * multiplier + service) - soldRef * (refPrice * multiplier + service) + (soldRef - soldNow) * salvage;
+    }
+  }
   const expired = timingFor(item, asOf).expired;
   const cap = expired ? 0 : Math.max(0, Math.floor(item.capacity));
   const hasAllot = (item.allotmentBuy ?? 0) > 0 && (item.allotmentCapacity ?? 0) > 0;
+  const allotBuy = hasAllot ? item.allotmentBuy! : 0, deposit = hasAllot ? clamp(item.allotmentDepositPct ?? DEFAULT_ALLOTMENT_DEPOSIT, 0, 1) : 0;
   return {
-    item, price, demand, gross, priceMultiplier: set.price[index], buy: item.buy,
-    salvage: item.buy * clamp(item.recoveryPct ?? 0, 0, 1),
-    allotBuy: hasAllot ? item.allotmentBuy! : 0, deposit: hasAllot ? clamp(item.allotmentDepositPct ?? DEFAULT_ALLOTMENT_DEPOSIT, 0, 1) : 0,
+    item, price, demand, gross, priceMultiplier: set.price[index], buy: item.buy, salvage,
+    allotBuy, deposit, allotCapital: basis === 'cash' ? allotBuy : deposit * allotBuy,
     capPrepaid: cap, capAllot: hasAllot ? Math.min(cap, Math.floor(item.allotmentCapacity!)) : 0, cap,
     minimum: Math.max(1, Math.floor(item.minOrderUnits ?? 1)), fee: Math.max(0, item.fixedOrderFee ?? 0), stock, expired,
-    serviceValue: Math.max(0, Number.isFinite(serviceValue) ? serviceValue : 0),
+    serviceValue: service, stockTerm, marketScale: base > 0 ? Math.max(1, refBase / base) : 1,
   };
 }
 
@@ -106,9 +131,17 @@ function profit(m: Model, q: number, a: number, s: number): number {
   return xq * p + (q - xq) * m.salvage - q * m.buy + xa * (p - m.allotBuy) - (a - xa) * m.deposit * m.allotBuy - m.fee + m.serviceValue * (xq + xa);
 }
 
-/** Budget usage = capital at risk: full pre-paid cost, allotment deposits and the fixed fee. */
+const ZEROS = new Map<number, Float64Array>();
+/** A shared, never-written zero vector (products without held stock share one instead of allocating per price option). */
+function zerosOf(length: number): Float64Array {
+  let z = ZEROS.get(length);
+  if (!z) { z = new Float64Array(length); ZEROS.set(length, z); }
+  return z;
+}
+
+/** Budget usage: full pre-paid cost, allotment units at `allotCapital` (full value for 'cash', deposit for 'capital-at-risk') and the fixed fee. */
 function capital(m: Model, q: number, a: number): number {
-  return q > 0 || a > 0 ? q * m.buy + a * m.deposit * m.allotBuy + m.fee : 0;
+  return q > 0 || a > 0 ? q * m.buy + a * m.allotCapital + m.fee : 0;
 }
 
 /** Partially sorts `work` so work[0..k-1] are the k smallest values, then returns their mean. */
@@ -146,23 +179,24 @@ function candidatePrices(item: Opportunity): number[] {
 }
 
 /** Stand-alone starting price for one product (its own objective at a few quantities). Joint pricing refines it. */
-function choosePrice(item: Opportunity, index: number, set: ScenarioSet, risk: number, k: number, asOf: string, budget: number, serviceValue = 0): number {
+function choosePrice(item: Opportunity, index: number, set: ScenarioSet, risk: number, k: number, asOf: string, budget: number, serviceValue = 0, basis: BudgetBasis = 'cash'): number {
   const reference = Math.max(1, Math.round(item.referencePrice));
-  if (timingFor(item, asOf).expired || item.capacity <= 0) return reference;
+  if (timingFor(item, asOf).expired || (item.capacity <= 0 && !((item.existingStock ?? 0) > 0))) return reference;
   const work = new Float64Array(set.count), vec = new Float64Array(set.count);
   let bestPrice = reference, bestScore = 0;
   for (const multiplier of PRICE_MULTIPLIERS) {
     const price = Math.max(1, Math.round(item.referencePrice * multiplier));
-    const m = buildModel(item, index, set, price, asOf, serviceValue);
+    const m = buildModel(item, index, set, price, asOf, serviceValue, basis);
     const candidates: [number, number][] = [];
     const maxQ = Math.min(m.capPrepaid, Math.floor((budget - m.fee) / m.buy));
     if (maxQ >= m.minimum) for (let j = 0; j <= 20; j++) candidates.push([Math.round(m.minimum + (maxQ - m.minimum) * j / 20), 0]);
-    if (m.capAllot > 0 && m.deposit * m.allotBuy > 0) {
-      const maxA = Math.min(m.capAllot, Math.floor((budget - m.fee) / (m.deposit * m.allotBuy)));
+    if (m.capAllot > 0 && m.allotCapital > 0) {
+      const maxA = Math.min(m.capAllot, Math.floor((budget - m.fee) / m.allotCapital));
       for (let j = 1; j <= 10 && maxA >= 1; j++) candidates.push([0, Math.max(1, Math.round(maxA * j / 10))]);
     }
+    if (m.stock > 0) candidates.push([0, 0]); // the price also matters for stock already held
     for (const [q, a] of candidates) {
-      for (let s = 0; s < set.count; s++) vec[s] = profit(m, q, a, s);
+      for (let s = 0; s < set.count; s++) vec[s] = profit(m, q, a, s) + m.stockTerm[s];
       const score = objectiveOf(vec, risk, k, work);
       if (score > bestScore + 1e-9) { bestScore = score; bestPrice = price; }
     }
@@ -188,24 +222,26 @@ class Allocator {
   }
   empty(): State {
     const P = new Float64Array(this.S);
-    return { q: new Float64Array(this.models.length), a: new Float64Array(this.models.length), itemProfit: this.models.map(() => new Float64Array(this.S)), P, spent: 0, objective: objectiveOf(P, this.risk, this.k, this.work) };
+    // Nothing bought: each product is worth its held-stock term (zero at the reference price or without stock).
+    const itemProfit = this.models.map(m => { const v = m.stockTerm.slice(); for (let s = 0; s < this.S; s++) P[s] += v[s]; return v; });
+    return { q: new Float64Array(this.models.length), a: new Float64Array(this.models.length), itemProfit, P, spent: 0, objective: objectiveOf(P, this.risk, this.k, this.work) };
   }
   /** Objective after changing item i to (q, a), without committing. */
   score(x: State, i: number, q: number, a: number): number {
     const m = this.models[i], old = x.itemProfit[i], t = this.trial;
-    for (let s = 0; s < this.S; s++) t[s] = x.P[s] - old[s] + profit(m, q, a, s);
+    for (let s = 0; s < this.S; s++) t[s] = x.P[s] - old[s] + profit(m, q, a, s) + m.stockTerm[s];
     return objectiveOf(t, this.risk, this.k, this.work);
   }
   /** Recomputes item i's scenario profits after its model (price) changed; quantities are unchanged. */
   rebase(x: State, i: number): void {
     const m = this.models[i], old = x.itemProfit[i];
-    for (let s = 0; s < this.S; s++) { const v = profit(m, x.q[i], x.a[i], s); x.P[s] += v - old[s]; old[s] = v; }
+    for (let s = 0; s < this.S; s++) { const v = profit(m, x.q[i], x.a[i], s) + m.stockTerm[s]; x.P[s] += v - old[s]; old[s] = v; }
     x.objective = objectiveOf(x.P, this.risk, this.k, this.work);
   }
   set(x: State, i: number, q: number, a: number): void {
     const m = this.models[i], old = x.itemProfit[i];
     x.spent += capital(m, q, a) - capital(m, x.q[i], x.a[i]);
-    for (let s = 0; s < this.S; s++) { const v = profit(m, q, a, s); x.P[s] += v - old[s]; old[s] = v; }
+    for (let s = 0; s < this.S; s++) { const v = profit(m, q, a, s) + m.stockTerm[s]; x.P[s] += v - old[s]; old[s] = v; }
     x.q[i] = q; x.a[i] = a;
     x.objective = objectiveOf(x.P, this.risk, this.k, this.work);
   }
@@ -248,8 +284,8 @@ class Allocator {
     const maxQ = Math.min(m.capPrepaid, Math.floor(Math.max(0, available - m.fee) / m.buy));
     if (maxQ >= m.minimum) for (let j = 0; j <= 14; j++) add(qs, m.minimum + (maxQ - m.minimum) * j / 14, maxQ);
     for (const d of [-2, -1, 0, 1, 2]) add(qs, x.q[i] + d, maxQ);
-    const unitDeposit = m.deposit * m.allotBuy;
-    const maxA = m.capAllot > 0 ? Math.min(m.capAllot, unitDeposit > 0 ? Math.floor(Math.max(0, available - m.fee) / unitDeposit) : m.capAllot) : 0;
+    const unitCapital = m.allotCapital;
+    const maxA = m.capAllot > 0 ? Math.min(m.capAllot, unitCapital > 0 ? Math.floor(Math.max(0, available - m.fee) / unitCapital) : m.capAllot) : 0;
     for (let j = 1; j <= 8 && maxA > 0; j++) add(as, maxA * j / 8, maxA);
     for (const d of [-2, -1, 0, 1, 2]) add(as, x.a[i] + d, maxA);
     let best = x.objective, bq = x.q[i], ba = x.a[i];
@@ -305,7 +341,7 @@ class Allocator {
     for (let i = 0; i < this.models.length; i++) for (let j = i + 1; j < this.models.length; j++) {
       for (const [qi, ai] of first(this.models[i])) for (const [qj, aj] of first(this.models[j])) {
         if (capital(this.models[i], qi, ai) + capital(this.models[j], qj, aj) > this.budget) continue;
-        for (let s = 0; s < this.S; s++) t[s] = profit(this.models[i], qi, ai, s) + profit(this.models[j], qj, aj, s);
+        for (let s = 0; s < this.S; s++) t[s] = x.P[s] + profit(this.models[i], qi, ai, s) + profit(this.models[j], qj, aj, s);
         const v = objectiveOf(t, this.risk, this.k, this.work);
         if (v > best) { best = v; choice = [i, qi, ai, j, qj, aj]; }
       }
@@ -382,7 +418,7 @@ function linearMax(models: Model[], gq: Float64Array, ga: Float64Array, budget: 
     const point = models.map((m, i) => {
       let best = 0, bestCost = 0, bestPoint = [0, 0];
       for (const v of vertices[i]) {
-        const cost = v[0] * m.buy + v[1] * m.deposit * m.allotBuy, score = gq[i] * v[0] + ga[i] * v[1] - lambda * cost;
+        const cost = v[0] * m.buy + v[1] * m.allotCapital, score = gq[i] * v[0] + ga[i] * v[1] - lambda * cost;
         if (score > best) { best = score; bestCost = cost; bestPoint = v; }
       }
       value += best; used += bestCost;
@@ -393,7 +429,7 @@ function linearMax(models: Model[], gq: Float64Array, ga: Float64Array, budget: 
   let lo = 0, hi = 0;
   models.forEach((m, i) => {
     if (m.buy > 0) hi = Math.max(hi, gq[i] / m.buy);
-    if (m.deposit * m.allotBuy > 0) hi = Math.max(hi, ga[i] / (m.deposit * m.allotBuy));
+    if (m.allotCapital > 0) hi = Math.max(hi, ga[i] / m.allotCapital);
   });
   let best = solve(0), feasible = best.used <= budget ? best : null;
   for (let it = 0; it < 80 && hi > 0; it++) {
@@ -414,7 +450,11 @@ function upperBound(models: Model[], x: State, risk: number, k: number, budget: 
   const work = new Float64Array(S), P = new Float64Array(S), trial = new Float64Array(S);
   const evalAt = (qq: Float64Array, aa: Float64Array, out: Float64Array) => {
     out.fill(0);
-    for (let i = 0; i < n; i++) if (qq[i] > 0 || aa[i] > 0) for (let s = 0; s < S; s++) out[s] += profit(relaxed[i], qq[i], aa[i], s);
+    for (let i = 0; i < n; i++) {
+      const held = relaxed[i].stockTerm;
+      for (let s = 0; s < S; s++) out[s] += held[s];
+      if (qq[i] > 0 || aa[i] > 0) for (let s = 0; s < S; s++) out[s] += profit(relaxed[i], qq[i], aa[i], s);
+    }
     return objectiveOf(out, risk, k, work);
   };
   let f = evalAt(q, a, P), best = Infinity;
@@ -471,7 +511,12 @@ function minimaxBound(optionSets: Model[][], x: State, risk: number, k: number, 
   const omega = new Float64Array(S).fill((1 - risk) / S);
   for (let j = 0; j < k; j++) omega[order[j]] += risk / k;
   const buildPart = (m: Model) => {
-    if (m.cap <= 0) return null;
+    if (m.cap <= 0) {
+      // Nothing can be bought, but held stock is still worth its (price-dependent) value.
+      let held = 0;
+      for (let s = 0; s < S; s++) held += omega[s] * m.stockTerm[s];
+      return { m, Qc: 0, Ac: 0, C: 0, prepaidFirst: true, total: new Float64Array(1), first: new Float64Array(1), step: new Float64Array(0), stockConst: held };
+    }
     const Qc = Math.min(m.capPrepaid, m.cap), Ac = Math.min(m.capAllot, m.cap), C = m.cap;
     const prepaidFirst = Ac === 0 || m.salvage <= m.allotBuy * (1 - m.deposit);
     const wTotal = new Float64Array(S), wFirst = new Float64Array(S);
@@ -483,25 +528,27 @@ function minimaxBound(optionSets: Model[][], x: State, risk: number, k: number, 
     const total = minCurve(wTotal, m.demand, C), first = minCurve(wFirst, m.demand, prepaidFirst ? Qc : Ac);
     const step = new Float64Array(C);
     for (let t = 0; t < C; t++) step[t] = total[t + 1] - total[t];
-    return { m, Qc, Ac, C, prepaidFirst, total, first, step };
+    let stockConst = 0; // the held-stock term does not depend on units, only on this price option
+    for (let s = 0; s < S; s++) stockConst += omega[s] * m.stockTerm[s];
+    return { m, Qc, Ac, C, prepaidFirst, total, first, step, stockConst };
   };
   type Part = NonNullable<ReturnType<typeof buildPart>>;
   // Every product chooses its best (price, pre-paid, allotment) for each budget multiplier, so the bound covers joint pricing.
   const products = optionSets.map(options => options.map(buildPart).filter((part): part is Part => part !== null));
   const firstAtOrBelow = (step: Float64Array, kappa: number) => { let lo = 0, hi = step.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (step[mid] <= kappa) hi = mid; else lo = mid + 1; } return lo; };
   const bestFor = (part: Part, lambda: number) => {
-    const { m, Qc, Ac, C, prepaidFirst, total, first, step } = part;
-    const unitDeposit = m.deposit * m.allotBuy;
-    // (0, 0) is always feasible with value 0; every other choice pays the fee and respects the minimum order.
-    let best = 0, bestCost = 0;
+    const { m, Qc, Ac, C, prepaidFirst, total, first, step, stockConst } = part;
+    const unitDeposit = m.deposit * m.allotBuy, unitCapital = m.allotCapital;
+    // (0, 0) is always feasible with only the held-stock value; every other choice pays the fee and respects the minimum order.
+    let best = stockConst, bestCost = 0;
     const consider = (q: number, a: number) => {
       if (q + a <= 0 || q + a > C || q > Qc || a > Ac || (q > 0 && q < m.minimum)) return;
-      const cost = q * m.buy + a * unitDeposit + m.fee;
-      const v = total[q + a] + first[prepaidFirst ? q : a] + (m.salvage - m.buy) * q - unitDeposit * a - m.fee - lambda * cost;
+      const cost = q * m.buy + a * unitCapital + m.fee;
+      const v = stockConst + total[q + a] + first[prepaidFirst ? q : a] + (m.salvage - m.buy) * q - unitDeposit * a - m.fee - lambda * cost;
       if (v > best) { best = v; bestCost = cost; }
     };
     if (prepaidFirst) {
-      const tStar = firstAtOrBelow(step, unitDeposit * (1 + lambda));
+      const tStar = firstAtOrBelow(step, unitDeposit + lambda * unitCapital);
       for (let q = 0; q <= Qc; q++) {
         if (q > 0 && q < m.minimum) continue;
         const a = Math.max(0, Math.min(tStar - q, Ac, C - q));
@@ -521,14 +568,14 @@ function minimaxBound(optionSets: Model[][], x: State, risk: number, k: number, 
   const solve = (lambda: number) => {
     let value = lambda * budget, used = 0;
     for (const parts of products) {
-      let best = 0, bestCost = 0;
+      let best = parts.length ? -Infinity : 0, bestCost = 0;
       for (const part of parts) { const r = bestFor(part, lambda); if (r.best > best) { best = r.best; bestCost = r.bestCost; } }
       value += best; used += bestCost;
     }
     return { value, used };
   };
   let lo = 0, hi = 0;
-  for (const parts of products) for (const part of parts) hi = Math.max(hi, ((part.m.price + part.m.serviceValue) * 2) / Math.max(1e-9, Math.min(part.m.buy, part.m.deposit * part.m.allotBuy || part.m.buy)));
+  for (const parts of products) for (const part of parts) hi = Math.max(hi, ((part.m.price + part.m.serviceValue) * 2) / Math.max(1e-9, Math.min(part.m.buy, part.m.allotCapital || part.m.buy)));
   let bound = solve(0).value;
   for (let it = 0; it < 70 && hi > 0; it++) {
     const lambda = (lo + hi) / 2, d = solve(lambda);
@@ -547,8 +594,11 @@ function pricePass(state: State, models: Model[], optionModels: Model[][], budge
   for (let round = 0; round < rounds; round++) {
     let changed = false;
     for (let i = 0; i < currentModels.length; i++) {
-      if (optionModels[i].length < 2 || currentModels[i].cap <= 0) continue;
-      for (const option of optionModels[i]) {
+      if (optionModels[i].length < 2 || currentModels[i].expired || (currentModels[i].cap <= 0 && currentModels[i].stock <= 0)) continue;
+      // Local price search on the sorted grid: try the two neighbours on each side of the current price.
+      const grid = optionModels[i].slice().sort((u, v) => u.price - v.price), at = grid.findIndex(o => o.price === currentModels[i].price);
+      const neighbours = at < 0 ? grid : [grid[at - 1], grid[at + 1], grid[at - 2], grid[at + 2]].filter((o): o is Model => o !== undefined);
+      for (const option of neighbours) {
         if (option.price === currentModels[i].price) continue;
         const trialModels = currentModels.slice();
         trialModels[i] = option;
@@ -571,7 +621,7 @@ function servedShareIn(models: Model[], x: State): number {
   models.forEach((m, i) => {
     for (let s = 0; s < m.gross.length; s++) {
       const [xq, xa] = sales(m, x.q[i], x.a[i], s);
-      served += Math.min(m.gross[s], m.stock) + xq + xa; gross += m.gross[s];
+      served += Math.min(m.gross[s], m.stock) + xq + xa; gross += m.gross[s] * m.marketScale;
     }
   });
   return gross > 0 ? served / gross : 0;
@@ -584,11 +634,11 @@ type Solved = { state: State; models: Model[]; optionModels: Model[][]; pricesFi
  * `fixedPrices` holds selling prices (the availability search keeps the no-target prices, so a target
  * is met by buying more cover for the same demand, not by discounting to create extra demand).
  */
-function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State): Solved {
-  const initial = fixedPrices ?? items.map((item, i) => choosePrice(item, i, set, risk, k, asOf, budget, mu));
+function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash'): Solved {
+  const initial = fixedPrices ?? items.map((item, i) => choosePrice(item, i, set, risk, k, asOf, budget, mu, basis));
   const pricesFixed = !jointPricing || fixedPrices !== undefined;
-  const optionModels = items.map((item, i) => (pricesFixed ? [initial[i]] : candidatePrices(item)).map(price => buildModel(item, i, set, price, asOf, mu)));
-  let models = items.map((item, i) => optionModels[i].find(m => m.price === initial[i]) ?? buildModel(item, i, set, initial[i], asOf, mu));
+  const optionModels = items.map((item, i) => (pricesFixed ? [initial[i]] : candidatePrices(item)).map(price => buildModel(item, i, set, price, asOf, mu, basis)));
+  let models = items.map((item, i) => optionModels[i].find(m => m.price === initial[i]) ?? buildModel(item, i, set, initial[i], asOf, mu, basis));
   const maxCap = Math.max(1, ...models.map(m => m.cap));
   const startStep = Math.max(1, Math.floor(maxCap / 16));
   // A plan within 0.5% of the proven bound is accepted; the residual is mostly the budget relaxation.
@@ -650,21 +700,32 @@ function strategyFor(row: { expired: boolean; prepaid: number; allotment: number
   return { strategy: 'Consider pre-buy', strategyReason: `${base}${lost}` };
 }
 
-function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set: ScenarioSet, asOf: string, alpha: number, withRows: boolean): Evaluated {
+/** Plain-English reason for the chosen selling price (shown next to every row). */
+function priceReasonFor(item: Opportunity, price: number, stock: number, units: number, cap: number, elasticity: number): string {
+  const reference = Math.max(1, Math.round(item.referencePrice)), change = price / reference - 1, e = elasticity.toFixed(1);
+  const label = `${change > 0 ? '+' : '−'}${Math.abs(Math.round(change * 1000) / 10)}% vs market`;
+  if (Math.abs(change) < 0.0005) return `Market price. At price elasticity ${e}, a mark-up would lose bookings faster than it adds margin, and a discount would not pay for itself.`;
+  if (change < 0 && stock > 0) return `${label}: sells more of the ${Math.round(stock)} units already held (their revenue is counted) instead of leaving them to salvage.`;
+  if (change < 0) return `${label}: demand here is price-sensitive (elasticity ${e}), so the extra bookings earn more than the lower margin costs.`;
+  if (cap > 0 && units >= cap) return `${label}: supply is capped at ${cap} units, so a higher price rations scarce inventory to the most valuable bookings.`;
+  return `${label}: demand here is not very price-sensitive (elasticity ${e}), so the higher margin outweighs the bookings lost and lowers the pre-buy risk.`;
+}
+
+function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set: ScenarioSet, asOf: string, alpha: number, withRows: boolean, basis: BudgetBasis = 'cash'): Evaluated {
   const S = set.count, k = Math.max(1, Math.ceil(alpha * S));
-  const models = items.map((item, i) => buildModel(item, i, set, decisions[i].price, asOf));
+  const models = items.map((item, i) => buildModel(item, i, set, decisions[i].price, asOf, 0, basis));
   const P = new Float64Array(S), profits = models.map(() => new Float64Array(S));
   const soldMean = new Float64Array(items.length), unsoldCost = new Float64Array(items.length), unmetVectors = models.map(() => new Float64Array(S));
   let grossTotal = 0, stockServed = 0;
   models.forEach((m, i) => {
     const q = Math.min(decisions[i].prepaid, m.cap), a = Math.min(decisions[i].allotment, Math.max(0, m.cap - q));
     for (let s = 0; s < S; s++) {
-      const v = profit(m, q, a, s), [xq, xa] = sales(m, q, a, s);
+      const v = profit(m, q, a, s) + m.stockTerm[s], [xq, xa] = sales(m, q, a, s);
       profits[i][s] = v; P[s] += v;
       soldMean[i] += (xq + xa) / S;
       unsoldCost[i] += ((q - xq) * (m.buy - m.salvage) + (a - xa) * m.deposit * m.allotBuy) / S;
       unmetVectors[i][s] = Math.max(0, m.demand[s] - xq - xa);
-      grossTotal += m.gross[s] / S; stockServed += Math.min(m.gross[s], m.stock) / S;
+      grossTotal += m.gross[s] * m.marketScale / S; stockServed += Math.min(m.gross[s], m.stock) / S;
     }
   });
   const order = Array.from({ length: S }, (_, s) => s).sort((u, v) => P[u] - P[v]);
@@ -689,19 +750,19 @@ function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set
       const item = items[i], q = Math.min(decisions[i].prepaid, m.cap), a = Math.min(decisions[i].allotment, Math.max(0, m.cap - q)), units = q + a;
       const v = profits[i], sorted = v.slice().sort();
       let expected = 0, itemLosses = 0, need = 0, unmet = 0, gross = 0, stock = 0;
-      for (let s = 0; s < S; s++) { expected += v[s] / S; if (v[s] < -1e-6) itemLosses++; need += m.demand[s] / S; unmet += unmetVectors[i][s] / S; gross += m.gross[s] / S; stock += Math.min(m.gross[s], m.stock) / S; }
+      for (let s = 0; s < S; s++) { expected += v[s] / S; if (v[s] < -1e-6) itemLosses++; need += m.demand[s] / S; unmet += unmetVectors[i][s] / S; gross += m.gross[s] * m.marketScale / S; stock += Math.min(m.gross[s], m.stock) / S; }
       const tail = tailSet.reduce((sum, s) => sum + v[s], 0) / k;
       const unmetSorted = unmetVectors[i].slice().sort();
       const timing = timingFor(item, asOf), lost = lostBookings(item);
       const advice = strategyFor({ expired: m.expired, prepaid: q, allotment: a, sellThrough: units > 0 ? soldMean[i] / units : 0, pLoss: units > 0 ? itemLosses / S : 0, tail, unmet, lost });
       rows.push({
-        ...item, engine: RISK_ENGINE_VERSION, forecast: forecastUnconstrained(item), price: decisions[i].price, qty: units, prepaidQty: q, allotQty: a,
-        spend: capital(m, q, a), prepaidSpend: q > 0 ? q * m.buy + m.fee : 0, allotSpend: a * m.deposit * m.allotBuy + (q === 0 && a > 0 ? m.fee : 0),
+        ...item, engine: RISK_ENGINE_VERSION, forecast: forecastUnconstrained(item), demandSource: demandSourceOf(item), priceElasticity: elasticityOf(item), budgetBasis: basis, priceReason: priceReasonFor(item, decisions[i].price, m.stock, units, m.cap, elasticityOf(item)), price: decisions[i].price, qty: units, prepaidQty: q, allotQty: a,
+        spend: capital(m, q, a), prepaidSpend: q > 0 ? q * m.buy + m.fee : 0, allotSpend: a * m.allotCapital + (q === 0 && a > 0 ? m.fee : 0),
         expectedProfit: expected, downsideProfit: units > 0 ? smallestMean(v, k, work) : 0, baseProfit: quantile(sorted, 0.5), upsideProfit: quantile(sorted, 0.9),
         expectedSold: soldMean[i], expectedUnsold: Math.max(0, units - soldMean[i]), unsoldExposure: unsoldCost[i],
         objective: (1 - risk) * expected + risk * tail, purchaseTiming: timing.purchaseTiming, timingReason: timing.timingReason, ...advice,
         pLoss: units > 0 ? itemLosses / S : 0, tailProfit: tail, lostDemand: lost, servedShare: gross > 0 ? (stock + soldMean[i]) / gross : 0,
-        coverage: { need, served: soldMean[i], unmet, highUnmet: quantile(unmetSorted, 0.9) }, buyWindow: buyWindowFor(item, asOf, decisions[i].price),
+        coverage: { need, served: soldMean[i], unmet, highUnmet: quantile(unmetSorted, 0.9) }, buyWindow: buyWindowFor({ ...item, volatility: volatilityOf(item) }, asOf, decisions[i].price),
       });
     });
   }
@@ -719,7 +780,8 @@ function settings(options: RiskPlanOptions) {
   const scenarioCount = options.scenarioCount ?? RISK_ENGINE_DEFAULTS.scenarioCount;
   const evaluationCount = options.evaluationCount ?? RISK_ENGINE_DEFAULTS.evaluationCount;
   const seed = options.seed ?? RISK_ENGINE_DEFAULTS.seed;
-  return { asOf, scenarioCount, evaluationCount, seed, alpha: RISK_ENGINE_DEFAULTS.alpha, overrides: options.scenarioOverrides ?? {} };
+  const basis: BudgetBasis = options.budgetBasis === 'capital-at-risk' ? 'capital-at-risk' : 'cash';
+  return { asOf, scenarioCount, evaluationCount, seed, alpha: RISK_ENGINE_DEFAULTS.alpha, overrides: options.scenarioOverrides ?? {}, basis };
 }
 
 /** Scores fixed decisions (e.g. a committed plan under stress, or in a mismatched world) on the out-of-sample scenario set. */
@@ -728,7 +790,7 @@ export function evaluateDecisions(items: Opportunity[], decisions: Decision[], r
   const o = settings(options);
   if (!items.length) return { rows: [] as PlanRow[], metrics: emptyMetrics() };
   const set = buildScenarioSet(items, o.evaluationCount, o.seed + 7919, o.overrides);
-  const result = evaluate(items, decisions, clamp(risk, 0, 1), set, o.asOf, o.alpha, true);
+  const result = evaluate(items, decisions, clamp(risk, 0, 1), set, o.asOf, o.alpha, true, o.basis);
   return { rows: result.rows, metrics: result.metrics };
 }
 
@@ -741,7 +803,7 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   const r = clamp(risk, 0, 1), B = Math.max(0, Number.isFinite(budget) ? budget : 0);
   const target = clamp(options.serviceTarget ?? 0, 0, 0.99), jointPricing = options.jointPricing !== false;
   const pricing: RiskOptimizedPlan['pricing'] = jointPricing ? 'joint' : 'fixed';
-  const summaryBase = { engine: RISK_ENGINE_VERSION, alpha: o.alpha, scenarioCount: o.scenarioCount, evaluationCount: o.evaluationCount, seed: o.seed };
+  const summaryBase = { engine: RISK_ENGINE_VERSION, alpha: o.alpha, scenarioCount: o.scenarioCount, evaluationCount: o.evaluationCount, seed: o.seed, budgetBasis: o.basis };
   let service: ServiceSummary = { target, status: target > 0 ? 'not-binding' : 'off', servedShare: 0, servedShareWithoutTarget: 0, serviceValue: 0, expectedProfitCost: 0, cvarCost: 0 };
   if (!items.length) {
     return { rows: [], objective: 0, upperBound: 0, gap: 0, baselineObjective: 0, algorithm: 'risk-cvar-local-search', bucketCount: 0, engine: RISK_ENGINE_VERSION, pricing, service,
@@ -750,14 +812,14 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   const optSet = buildScenarioSet(items, o.scenarioCount, o.seed, o.overrides);
   const evalSet = buildScenarioSet(items, o.evaluationCount, o.seed + 7919, o.overrides);
   const k = Math.max(1, Math.ceil(o.alpha * o.scenarioCount));
-  const base = solvePortfolio(items, optSet, B, r, k, o.asOf, 0, jointPricing, true);
+  const base = solvePortfolio(items, optSet, B, r, k, o.asOf, 0, jointPricing, true, undefined, undefined, o.basis);
   let chosen = base, maxAvailability: Decision[] | null = null;
   if (target > 0 && servedShareIn(base.models, base.state) < target) {
     // Smallest service value μ whose optimal plan serves the target share at the same prices: double, then bisect.
     const prices = base.models.map(m => m.price);
     // Doubling builds each plan from scratch (μ jumps a lot, so budget must move between products);
     // bisection and the final certified solve warm-start from the feasible end of the bracket.
-    const solve = (mu: number, thorough: boolean, warm?: State) => solvePortfolio(items, optSet, B, r, k, o.asOf, mu, false, thorough, prices, warm);
+    const solve = (mu: number, thorough: boolean, warm?: State) => solvePortfolio(items, optSet, B, r, k, o.asOf, mu, false, thorough, prices, warm, o.basis);
     const meanPrice = Math.max(1, prices.reduce((sum, price) => sum + price, 0) / prices.length);
     let lo = 0, hi = 0.02 * meanPrice, reached = false, last: Solved = base, previousShare = servedShareIn(base.models, base.state);
     for (let t = 0; t < 9 && !reached; t++) {
@@ -792,13 +854,13 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   const fixedPriceBound = chosen.pricesFixed ? upperBound(models, state, r, k, B) : Infinity;
   const bound = Math.max(state.objective, Math.min(fixedPriceBound, minimaxBound(optionModels, state, r, k, B) + Math.max(1e-7, Math.abs(state.objective) * 1e-12)));
   const decisions: Decision[] = items.map((_, i) => ({ prepaid: state.q[i], allotment: state.a[i], price: models[i].price }));
-  const result = evaluate(items, decisions, r, evalSet, o.asOf, o.alpha, true);
+  const result = evaluate(items, decisions, r, evalSet, o.asOf, o.alpha, true, o.basis);
   if (chosen !== base) {
     const baseDecisions = items.map((_, i) => ({ prepaid: base.state.q[i], allotment: base.state.a[i], price: base.models[i].price }));
-    const baseMetrics = evaluate(items, baseDecisions, r, evalSet, o.asOf, o.alpha, false).metrics;
+    const baseMetrics = evaluate(items, baseDecisions, r, evalSet, o.asOf, o.alpha, false, o.basis).metrics;
     service = { ...service, servedShare: result.metrics.servedShare, servedShareWithoutTarget: baseMetrics.servedShare, expectedProfitCost: baseMetrics.expectedProfit - result.metrics.expectedProfit, cvarCost: baseMetrics.cvar - result.metrics.cvar };
   } else service = { ...service, servedShare: result.metrics.servedShare, servedShareWithoutTarget: result.metrics.servedShare };
-  if (maxAvailability) service = { ...service, maxServedShare: evaluate(items, maxAvailability, r, evalSet, o.asOf, o.alpha, false).metrics.servedShare };
+  if (maxAvailability) service = { ...service, maxServedShare: evaluate(items, maxAvailability, r, evalSet, o.asOf, o.alpha, false, o.basis).metrics.servedShare };
 
   let baselineObjective = 0, legacy: RiskMetrics | undefined;
   if (options.legacyRows && options.legacyRows.length === items.length) {
@@ -808,7 +870,7 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
     const legacyState = legacyAllocator.empty();
     legacyDecisions.forEach((d, i) => { if (d.prepaid > 0) legacyAllocator.set(legacyState, i, Math.min(d.prepaid, legacyModels[i].cap), 0); });
     baselineObjective = legacyState.objective;
-    legacy = evaluate(items, legacyDecisions, r, evalSet, o.asOf, o.alpha, false).metrics;
+    legacy = evaluate(items, legacyDecisions, r, evalSet, o.asOf, o.alpha, false, o.basis).metrics;
   }
   const prepaidUnits = decisions.reduce((sum, d) => sum + d.prepaid, 0), allotmentUnits = decisions.reduce((sum, d) => sum + d.allotment, 0);
   const rows = target > 0 ? result.rows.map(row => ({ ...row, serviceTarget: target })) : result.rows;

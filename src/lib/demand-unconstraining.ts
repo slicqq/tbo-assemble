@@ -1,4 +1,5 @@
 import { trendFactor, type Opportunity } from './procurement-core';
+import { learnDemand } from './learned-demand';
 
 /**
  * Sold-out (censored) demand recovery used by the portfolio risk engine (risk-cvar-v5).
@@ -52,6 +53,9 @@ export function forecastUnconstrained(item: Opportunity): number {
   const weight = item.bookingWeight ?? 0.55;
   const searchDemand = Math.max(0, item.searches || 0) * Math.max(0, Math.min(1, item.conversion || 0));
   const blended = unconstrainedBookings(item) * weight + searchDemand * (1 - weight);
+  // With a monthly history the planner uses exactly the forecast the rolling backtest validated (learned-demand.ts).
+  const learned = learnDemand(item);
+  if (learned) return Math.max(0, learned.forecast * (1 - item.cancellations));
   return Math.max(0, blended * trendFactor(item) * item.seasonal * item.signal * (1 - item.cancellations));
 }
 
