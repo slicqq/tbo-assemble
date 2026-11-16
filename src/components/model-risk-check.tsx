@@ -3,6 +3,9 @@ import { useState } from 'react';
 import { FlaskConical } from 'lucide-react';
 import { checkModelRisk, MODEL_RISK_WORLDS, type ModelRiskReport, type PlanInWorld } from '@/lib/model-risk';
 import type { Opportunity, PlanEngine, PlanRow } from '@/lib/procurement-core';
+import { INPUT_LIMITS } from '@/lib/input-limits';
+import { BACKGROUND_PLAN_THRESHOLD } from '@/lib/plan-jobs';
+import { runPlanJob, SupersededError } from '@/lib/plan-client';
 
 const compact = (n: number) => `${n < 0 ? '−' : ''}₹${(Math.abs(n) / 1e5).toFixed(2)}L`;
 const signature = (engine: PlanEngine, budget: number, risk: number, asOf: string, rows: PlanRow[]) =>
@@ -20,13 +23,24 @@ export default function ModelRiskCheck({ items, rows, budget, risk, asOf, engine
   const report = saved?.key === key ? saved.report : null;
   const stale = saved !== null && saved.key !== key;
 
+  // The check compares against the legacy engine (v4), which supports up to 100 products.
+  const tooLarge = items.length > INPUT_LIMITS.maxItemsLegacyEngine;
   function run() {
     setRunning(true);
     setError('');
+    const options = { asOf, ...(engine === 'risk-cvar-v5' ? { planRows: rows } : { legacyRows: rows }) };
+    if (items.length > BACKGROUND_PLAN_THRESHOLD) {
+      // Larger portfolios: 11 re-optimisations take several seconds, so run them in the background worker.
+      runPlanJob<ModelRiskReport>({ kind: 'model-risk', items, budget, risk, options }, 'model-risk')
+        .then(({ result }) => setSaved({ key, report: result }))
+        .catch(e => { if (!(e instanceof SupersededError)) setError(e instanceof Error ? e.message : 'The model-risk check failed.'); })
+        .finally(() => setRunning(false));
+      return;
+    }
     // Let the "Running…" state paint before the synchronous optimisations start.
     window.setTimeout(() => {
       try {
-        const result = checkModelRisk(items, budget, risk, { asOf, ...(engine === 'risk-cvar-v5' ? { planRows: rows } : { legacyRows: rows }) });
+        const result = checkModelRisk(items, budget, risk, options);
         setSaved({ key, report: result });
       } catch (e) {
         setError(e instanceof Error ? e.message : 'The model-risk check failed.');
@@ -48,8 +62,8 @@ export default function ModelRiskCheck({ items, rows, budget, risk, asOf, engine
         </div>
       </div>
       <div className="model-risk-actions">
-        <button type="button" className="outline-button" onClick={run} disabled={running || !items.length}>{running ? 'Running… (about 5 seconds)' : report ? 'Run again' : 'Run model-risk check'}</button>
-        <span>{stale ? 'Settings changed since the last run — run again to refresh.' : `Risk-adjusted result = (1 − r)·expected profit + r·worst-10% average, with r = ${risk.toFixed(2)}. Same random seasons in every world.`}</span>
+        <button type="button" className="outline-button" onClick={run} disabled={running || !items.length || tooLarge}>{running ? (items.length > BACKGROUND_PLAN_THRESHOLD ? 'Running in the background…' : 'Running… (about 5 seconds)') : report ? 'Run again' : 'Run model-risk check'}</button>
+        <span>{tooLarge ? `Available for portfolios of up to ${INPUT_LIMITS.maxItemsLegacyEngine} products (it compares against the legacy v4 engine); this one has ${items.length.toLocaleString('en-IN')}.` : stale ? 'Settings changed since the last run — run again to refresh.' : `Risk-adjusted result = (1 − r)·expected profit + r·worst-10% average, with r = ${risk.toFixed(2)}. Same random seasons in every world.`}</span>
       </div>
       {error && <p className="coverage-alert" role="alert">{error}</p>}
       {report && s && (

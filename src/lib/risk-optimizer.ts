@@ -60,7 +60,8 @@ export type ServiceSummary = {
 };
 export type RiskOptimizedPlan = {
   rows: PlanRow[]; objective: number; upperBound: number; gap: number; baselineObjective: number;
-  algorithm: 'risk-cvar-local-search'; bucketCount: number; engine: typeof RISK_ENGINE_VERSION; risk: RiskSummary;
+  /** 'risk-cvar-decomposition' is used above LARGE_PORTFOLIO_THRESHOLD products (or when `solver` asks for it). */
+  algorithm: 'risk-cvar-local-search' | 'risk-cvar-decomposition'; bucketCount: number; engine: typeof RISK_ENGINE_VERSION; risk: RiskSummary;
   /** 'joint': selling prices are chosen together with quantities and covered by the upper bound. */
   pricing: 'joint' | 'fixed'; service: ServiceSummary;
 };
@@ -627,14 +628,19 @@ function servedShareIn(models: Model[], x: State): number {
   return gross > 0 ? served / gross : 0;
 }
 
-type Solved = { state: State; models: Model[]; optionModels: Model[][]; pricesFixed: boolean };
+/** `bound`: a certified upper bound already computed by the solver (large portfolios); otherwise the caller computes one. */
+type Solved = { state: State; models: Model[]; optionModels: Model[][]; pricesFixed: boolean; bound?: number };
 
 /**
  * One optimisation at service value μ. `thorough` adds the certified escalation used for the final plan.
  * `fixedPrices` holds selling prices (the availability search keeps the no-target prices, so a target
  * is met by buying more cover for the same demand, not by discounting to create extra demand).
  */
-function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash'): Solved {
+function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash', large = items.length > LARGE_PORTFOLIO_THRESHOLD): Solved {
+  if (large) {
+    const solved = solveLarge(items, set, budget, risk, k, asOf, mu, jointPricing, thorough, fixedPrices, warm, basis);
+    return { ...solved, state: withinBudget(solved.models, solved.state, budget, risk, k) };
+  }
   const initial = fixedPrices ?? items.map((item, i) => choosePrice(item, i, set, risk, k, asOf, budget, mu, basis));
   const pricesFixed = !jointPricing || fixedPrices !== undefined;
   const optionModels = items.map((item, i) => (pricesFixed ? [initial[i]] : candidatePrices(item)).map(price => buildModel(item, i, set, price, asOf, mu, basis)));
@@ -667,8 +673,13 @@ function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, 
       if (alt.objective > state.objective) { state = alt; models = altModels; }
     }
   }
-  // Never return an over-budget plan, even by floating-point round-off.
-  allocator = new Allocator(models, budget, risk, k);
+  state = withinBudget(models, state, budget, risk, k);
+  return { state, models, optionModels, pricesFixed };
+}
+
+/** Never return an over-budget plan, even by floating-point round-off. */
+function withinBudget(models: Model[], state: State, budget: number, risk: number, k: number): State {
+  const allocator = new Allocator(models, budget, risk, k);
   let guard = 0;
   while (models.reduce((sum, m, i) => sum + capital(m, state.q[i], state.a[i]), 0) > budget && guard++ < 100000) {
     let i = models.length - 1;
@@ -677,8 +688,402 @@ function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, 
     if (state.a[i] > 0) allocator.set(state, i, state.q[i], state.a[i] - 1);
     else allocator.set(state, i, state.q[i] - 1 < models[i].minimum ? 0 : state.q[i] - 1, state.a[i]);
   }
-  return { state, models, optionModels, pricesFixed };
+  return state;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Large portfolios: scenario-weight decomposition
+// ---------------------------------------------------------------------------------------------
+/**
+ * Above this many products the planner uses the decomposition solver below. The local search above is
+ * O(n²·S) per pass (≈0.9 s at 20 products, 9 s at 40, 23 s at 80), so it cannot plan TBO-sized portfolios.
+ */
+export const LARGE_PORTFOLIO_THRESHOLD = 30;
+
+/**
+ * CVaR is a minimum over scenario weightings ω (ω_s = (1−r)/S + r·ν_s, 0 ≤ ν_s ≤ 1/k, Σν = 1). For any such ω,
+ * Σ_s ω_s·profit_s(plan) ≥ objective(plan), and once the budget is priced with a multiplier λ the problem splits
+ * product by product:  λ·B + Σ_i max_{price, pre-paid, allotment} [Σ_s ω_s·profit_i,s − λ·cost_i].
+ * Each product's maximum is found exactly on two 1-D concave curves (the relaxation `minimaxBound` uses), so every
+ * pass yields a valid upper bound. The weights are averaged over the plans found so far (fictitious play); each
+ * plan is a best response to the averaged weights, scored on the true objective, and the best plan is kept and
+ * then improved by budget-neutral unit swaps between products.
+ */
+type LeanProduct = {
+  index: number; D: Float64Array; M: Float64Array; order: Int32Array;
+  prices: number[]; bases: number[]; refPrice: number; refBase: number; /** Options the plan may use (expired or empty products keep the reference price). */ choosable: number[];
+  buy: number; salvage: number; allotBuy: number; deposit: number; unitDeposit: number; allotCapital: number;
+  Qc: number; Ac: number; C: number; minimum: number; fee: number; stock: number; service: number; prepaidFirst: boolean;
+};
+type LeanCurve = { len: number; T: Float64Array; flen: number; F: Float64Array; stockConst: number };
+type LeanChoice = { value: number; cost: number; q: number; a: number };
+
+/** Mirrors buildModel (tests/risk-large.test.ts checks the curves against Σ ω·profit of buildModel for every price option). */
+function leanProduct(item: Opportunity, index: number, set: ScenarioSet, prices: number[], asOf: string, serviceValue: number, basis: BudgetBasis): LeanProduct {
+  const planned = forecastUnconstrained(item), elasticity = elasticityOf(item) * (set.elasticityMultiplier ?? 1);
+  const stock = Math.max(0, item.existingStock || 0), salvage = item.buy * clamp(item.recoveryPct ?? 0, 0, 1);
+  const service = Math.max(0, Number.isFinite(serviceValue) ? serviceValue : 0);
+  const refPrice = Math.max(1, Math.round(item.referencePrice)), refBase = planned * priceResponse(refPrice, item.referencePrice, elasticity);
+  const expired = timingFor(item, asOf).expired, cap = expired ? 0 : Math.max(0, Math.floor(item.capacity));
+  const hasAllot = (item.allotmentBuy ?? 0) > 0 && (item.allotmentCapacity ?? 0) > 0;
+  const allotBuy = hasAllot ? item.allotmentBuy! : 0, deposit = hasAllot ? clamp(item.allotmentDepositPct ?? DEFAULT_ALLOTMENT_DEPOSIT, 0, 1) : 0;
+  const capAllot = hasAllot ? Math.min(cap, Math.floor(item.allotmentCapacity!)) : 0;
+  const D = set.demand[index], order = Int32Array.from({ length: set.count }, (_, s) => s).sort((u, v) => D[u] - D[v]);
+  const fixedAtReference = expired || (cap <= 0 && stock <= 0);
+  const reference = prices.indexOf(refPrice);
+  return {
+    index, D, M: set.price[index], order, prices, bases: prices.map(price => planned * priceResponse(price, item.referencePrice, elasticity)), refPrice, refBase,
+    choosable: fixedAtReference && reference >= 0 ? [reference] : prices.map((_, o) => o),
+    buy: item.buy, salvage, allotBuy, deposit, unitDeposit: deposit * allotBuy, allotCapital: basis === 'cash' ? allotBuy : deposit * allotBuy,
+    Qc: cap, Ac: capAllot, C: cap, minimum: Math.max(1, Math.floor(item.minOrderUnits ?? 1)), fee: Math.max(0, item.fixedOrderFee ?? 0), stock, service,
+    prepaidFirst: capAllot === 0 || salvage <= allotBuy * (1 - deposit),
+  };
+}
+
+const EMPTY_CURVE = new Float64Array(1);
+/** Scratch buffers reused across curve builds (per solve). */
+type LeanScratch = { wT: Float64Array; wF: Float64Array; d: Float64Array; T: Float64Array; F: Float64Array };
+function leanScratch(S: number, maxLen: number): LeanScratch {
+  return { wT: new Float64Array(S), wF: new Float64Array(S), d: new Float64Array(S), T: new Float64Array(maxLen + 1), F: new Float64Array(maxLen + 1) };
+}
+
+/**
+ * Weighted curves of one product at one price: T(u) = Σ_s wT_s·min(u, d_s) over all units and F(v) = Σ_s wF_s·min(v, d_s)
+ * over the unit type sold first, so Σ_s ω_s·profit_s(q, a) = stockConst + T(q + a) + F(first) + linear terms (see minimaxBound).
+ * Both are flat beyond the largest scenario demand, so they are stored only up to min(capacity, ⌈max demand⌉).
+ * Writes into `scratch` unless `keep` is set (then the curve owns new arrays).
+ */
+function leanCurve(p: LeanProduct, o: number, omega: Float64Array, scratch: LeanScratch, keep: boolean): LeanCurve {
+  const S = omega.length, price = p.prices[o], base = p.bases[o];
+  let stockConst = 0;
+  if (p.stock > 0) {
+    for (let s = 0; s < S; s++) {
+      const gross = base * p.D[s], soldNow = Math.min(p.stock, gross), soldRef = Math.min(p.stock, p.refBase * p.D[s]), multiplier = p.M[s];
+      stockConst += omega[s] * (soldNow * (price * multiplier + p.service) - soldRef * (p.refPrice * multiplier + p.service) + (soldRef - soldNow) * p.salvage);
+    }
+  }
+  if (p.C <= 0) return { len: 0, T: EMPTY_CURVE, flen: 0, F: EMPTY_CURVE, stockConst };
+  const { wT, wF, d } = scratch;
+  const allotNet = p.allotBuy * (1 - p.deposit);
+  let WT = 0, WF = 0;
+  for (let j = 0; j < S; j++) {
+    const s = p.order[j], ps = price * p.M[s] + p.service;
+    const vq = Math.max(0, ps - p.salvage), va = p.Ac > 0 ? Math.max(0, ps - allotNet) : 0;
+    const hi = p.prepaidFirst ? vq : va, lo = Math.min(p.prepaidFirst ? va : vq, hi);
+    wT[j] = omega[s] * lo; wF[j] = omega[s] * (hi - lo); WT += wT[j]; WF += wF[j];
+    d[j] = Math.max(0, base * p.D[s] - p.stock);
+  }
+  const len = Math.min(p.C, Math.ceil(d[S - 1])), flen = Math.min(p.prepaidFirst ? p.Qc : p.Ac, len);
+  const T = keep ? new Float64Array(len + 1) : scratch.T, F = keep ? new Float64Array(flen + 1) : scratch.F;
+  let j = 0, belowT = 0, weightT = 0, belowF = 0, weightF = 0;
+  for (let u = 0; u <= len; u++) {
+    while (j < S && d[j] <= u) { belowT += wT[j] * d[j]; weightT += wT[j]; belowF += wF[j] * d[j]; weightF += wF[j]; j++; }
+    T[u] = belowT + u * (WT - weightT);
+    if (u <= flen) F[u] = belowF + u * (WF - weightF);
+  }
+  return { len, T, flen, F, stockConst };
+}
+
+/**
+ * Exact best (pre-paid, allotment) for one product and price at budget multiplier λ, maximising
+ * Σ_s ω_s·profit_s − λ·cost. With pre-paid units sold first (the usual case) the objective is concave in the
+ * pre-paid quantity once the allotment is chosen optimally, so a binary search finds the smallest maximiser;
+ * minimum orders and the fixed fee are handled by comparing with "no order" and "allotment only".
+ */
+function leanBest(p: LeanProduct, c: LeanCurve, lambda: number, out: LeanChoice): LeanChoice {
+  out.value = c.stockConst; out.cost = 0; out.q = 0; out.a = 0;
+  if (p.C <= 0) return out;
+  const T = c.T, F = c.F, len = c.len, flen = c.flen, base = c.stockConst - p.fee * (1 + lambda);
+  const qSlope = p.salvage - p.buy - lambda * p.buy, aSlope = -p.unitDeposit - lambda * p.allotCapital;
+  if (p.prepaidFirst) {
+    // t* = first u with T(u+1) − T(u) ≤ τ (marginal cost of an allotment unit); T is flat from len on, so t* ≤ len.
+    const tau = p.unitDeposit + lambda * p.allotCapital;
+    let lo = 0, hi = len;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (T[mid + 1] - T[mid] <= tau) hi = mid; else lo = mid + 1; }
+    const tStar = lo, Ac = p.Ac, C = p.C;
+    if (Ac >= 1) {
+      const a = Math.max(1, Math.min(tStar, Ac, C));
+      const v = base + T[a < len ? a : len] + F[0] + aSlope * a;
+      if (v > out.value) { out.value = v; out.cost = a * p.allotCapital + p.fee; out.q = 0; out.a = a; }
+    }
+    if (p.minimum <= p.Qc) {
+      // g(q) = value with the best allotment for q; concave on [minimum, Qc], so binary search for the smallest maximiser.
+      let l = p.minimum, h = p.Qc;
+      while (l < h) {
+        const mid = (l + h) >> 1;
+        let a0 = tStar - mid; if (a0 > Ac) a0 = Ac; if (a0 > C - mid) a0 = C - mid; if (a0 < 0) a0 = 0;
+        const m1 = mid + 1;
+        let a1 = tStar - m1; if (a1 > Ac) a1 = Ac; if (a1 > C - m1) a1 = C - m1; if (a1 < 0) a1 = 0;
+        const u0 = mid + a0, u1 = m1 + a1;
+        const g0 = T[u0 < len ? u0 : len] + F[mid < flen ? mid : flen] + qSlope * mid + aSlope * a0;
+        const g1 = T[u1 < len ? u1 : len] + F[m1 < flen ? m1 : flen] + qSlope * m1 + aSlope * a1;
+        if (g1 - g0 <= 0) h = mid; else l = mid + 1;
+      }
+      let a = tStar - l; if (a > Ac) a = Ac; if (a > C - l) a = C - l; if (a < 0) a = 0;
+      const u = l + a, v = base + T[u < len ? u : len] + F[l < flen ? l : flen] + qSlope * l + aSlope * a;
+      if (v > out.value) { out.value = v; out.cost = l * p.buy + a * p.allotCapital + p.fee; out.q = l; out.a = a; }
+    }
+    return out;
+  }
+  // Allotment sold first (salvage above the allotment's net cost): rare, so an exact scan over allotment units.
+  const consider = (q: number, a: number) => {
+    if (q + a <= 0 || q + a > p.C || q > p.Qc || a > p.Ac || (q > 0 && q < p.minimum)) return;
+    const u = q + a, v = base + T[u < len ? u : len] + F[a < flen ? a : flen] + qSlope * q + aSlope * a;
+    if (v > out.value) { out.value = v; out.cost = q * p.buy + a * p.allotCapital + p.fee; out.q = q; out.a = a; }
+  };
+  const tau = (p.buy - p.salvage) + lambda * p.buy;
+  let lo = 0, hi = len;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (T[mid + 1] - T[mid] <= tau) hi = mid; else lo = mid + 1; }
+  const tStar = lo;
+  for (let a = 0; a <= p.Ac; a++) {
+    const q = Math.max(0, Math.min(tStar - a, p.Qc, p.C - a));
+    consider(q > 0 && q < p.minimum ? 0 : q, a);
+    if (q > 0 && q < p.minimum) consider(p.minimum, a);
+    if (a === 0) consider(Math.max(p.minimum, q, 1), 0);
+  }
+  return out;
+}
+
+/** CVaR weighting at a plan: (1−r)/S everywhere plus r/k on its k worst scenarios. */
+function tailWeights(P: Float64Array, risk: number, k: number): Float64Array {
+  const S = P.length, order = Array.from({ length: S }, (_, s) => s).sort((u, v) => P[u] - P[v]);
+  const omega = new Float64Array(S).fill((1 - risk) / S);
+  for (let j = 0; j < k; j++) omega[order[j]] += risk / k;
+  return omega;
+}
+
+type LeanPlan = { q: Int32Array; a: Int32Array; option: Int32Array };
+
+function solveLarge(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash'): Solved {
+  const n = items.length, S = set.count, B = Number.isFinite(budget) ? budget : Infinity;
+  const pricesFixed = !jointPricing || fixedPrices !== undefined;
+  const products = items.map((item, i) => leanProduct(item, i, set, pricesFixed ? [fixedPrices?.[i] ?? Math.max(1, Math.round(item.referencePrice))] : candidatePrices(item), asOf, mu, basis));
+  const reference = products.map(p => Math.max(0, p.prices.indexOf(p.refPrice)));
+  const scratch = leanScratch(S, Math.max(1, ...products.map(p => p.C)));
+  const modelCache = new Map<number, Model>();
+  const modelOf = (i: number, o: number): Model => {
+    const key = i * 64 + o;
+    let m = modelCache.get(key);
+    if (!m) { if (modelCache.size > 4 * n) modelCache.clear(); m = buildModel(items[i], i, set, products[i].prices[o], asOf, mu, basis); modelCache.set(key, m); }
+    return m;
+  };
+  const work = new Float64Array(S);
+  const scenarioProfit = (plan: LeanPlan) => {
+    const P = new Float64Array(S);
+    for (let i = 0; i < n; i++) {
+      const m = modelOf(i, plan.option[i]), q = plan.q[i], a = plan.a[i];
+      for (let s = 0; s < S; s++) P[s] += m.stockTerm[s] + (q > 0 || a > 0 ? profit(m, q, a, s) : 0);
+    }
+    return P;
+  };
+  const choice: LeanChoice = { value: 0, cost: 0, q: 0, a: 0 };
+  // λ large enough that no unit is worth its budget: above the best possible unit revenue per rupee of budget.
+  let lambdaMax = 0;
+  for (const p of products) {
+    let maxMultiplier = 0;
+    for (let s = 0; s < S; s++) if (p.M[s] > maxMultiplier) maxMultiplier = p.M[s];
+    for (const price of p.prices) lambdaMax = Math.max(lambdaMax, ((price * maxMultiplier + p.service) * 2) / Math.max(1e-9, Math.min(p.buy, p.allotCapital || p.buy)));
+  }
+  lambdaMax = Math.max(lambdaMax, 1e-6);
+
+  /**
+   * Best response to ω: bisection on λ where every product picks its best (price, pre-paid, allotment) among its
+   * active price options at each λ, then budget rounding. Choosing prices together with λ keeps them consistent
+   * (a higher price needs fewer units, which lowers λ, which favours lower prices again).
+   */
+  type Active = { o: number; curve: LeanCurve }[];
+  const respond = (active: Active[], lambdaHint: number): { plan: LeanPlan; lambda: number } => {
+    const q = new Int32Array(n), a = new Int32Array(n), opt = new Int32Array(n), qLo = new Int32Array(n), aLo = new Int32Array(n), optLo = new Int32Array(n);
+    const cost = new Float64Array(n), costLo = new Float64Array(n), value = new Float64Array(n), valueLo = new Float64Array(n);
+    const at = (lambda: number, qq: Int32Array, aa: Int32Array, oo: Int32Array, cc: Float64Array, vv: Float64Array) => {
+      let used = 0;
+      for (let i = 0; i < n; i++) {
+        let bestValue = -Infinity;
+        for (const { o, curve } of active[i]) {
+          leanBest(products[i], curve, lambda, choice);
+          if (choice.value > bestValue + 1e-9 * Math.max(1, Math.abs(bestValue)) || bestValue === -Infinity) { bestValue = choice.value; qq[i] = choice.q; aa[i] = choice.a; oo[i] = o; cc[i] = choice.cost; vv[i] = choice.value + lambda * choice.cost; }
+        }
+        used += cc[i];
+      }
+      return used;
+    };
+    if (at(0, q, a, opt, cost, value) <= B) return { plan: { q, a, option: opt }, lambda: 0 };
+    qLo.set(q); aLo.set(a); optLo.set(opt); costLo.set(cost); valueLo.set(value);
+    const tq = new Int32Array(n), ta = new Int32Array(n), to = new Int32Array(n), tc = new Float64Array(n), tv = new Float64Array(n);
+    // Bracket the critical λ: near the previous one when known (it moves little between iterations), otherwise [0, λmax].
+    let lo = 0, hi = lambdaMax, steps = 48;
+    if (lambdaHint > 0) {
+      const down = lambdaHint * 0.8, up = lambdaHint * 1.25;
+      if (at(down, tq, ta, to, tc, tv) > B) { lo = down; qLo.set(tq); aLo.set(ta); optLo.set(to); costLo.set(tc); valueLo.set(tv); }
+      if (at(up, tq, ta, to, tc, tv) <= B) { hi = up; steps = 26; }
+      if (lo === 0) steps = 48;
+    }
+    // Guard: make sure the upper end really is within budget (e.g. allotments that use no budget under capital-at-risk).
+    for (let guard = 0; guard < 60 && at(hi, q, a, opt, cost, value) > B; guard++) { lo = hi; hi *= 2; }
+    for (let it = 0; it < steps; it++) {
+      const mid = (lo + hi) / 2;
+      if (at(mid, tq, ta, to, tc, tv) > B) { lo = mid; qLo.set(tq); aLo.set(ta); optLo.set(to); costLo.set(tc); valueLo.set(tv); }
+      else { hi = mid; q.set(tq); a.set(ta); opt.set(to); cost.set(tc); value.set(tv); }
+    }
+    // Rounding: switch products to their choice just below the critical λ while the budget allows (best ω-value per rupee first).
+    let used = cost.reduce((sum, c) => sum + c, 0);
+    const switches = Array.from({ length: n }, (_, i) => i).filter(i => costLo[i] > cost[i] && (qLo[i] !== q[i] || aLo[i] !== a[i] || optLo[i] !== opt[i]))
+      .sort((u, v) => (valueLo[v] - value[v]) / (costLo[v] - cost[v]) - (valueLo[u] - value[u]) / (costLo[u] - cost[u]));
+    for (const i of switches) if (used + costLo[i] - cost[i] <= B) { used += costLo[i] - cost[i]; q[i] = qLo[i]; a[i] = aLo[i]; opt[i] = optLo[i]; cost[i] = costLo[i]; }
+    return { plan: { q, a, option: opt }, lambda: hi };
+  };
+
+  /**
+   * Valid upper bound for weights ω over every allowed price: min over a λ grid of λ·B + Σ_i max_price h_i(λ).
+   * Also returns each product's active options: those that are best at some grid λ (at most MAX_ACTIVE, nearest λ0 first).
+   */
+  const MAX_ACTIVE = 4;
+  const boundAndActive = (omega: Float64Array, lambda0: number, full: boolean): { bound: number; active: number[][] } => {
+    // Active options: best at λ near λ0 (first entries win the MAX_ACTIVE slots). Full pass: a finer grid for the bound.
+    const grid = lambda0 > 0
+      ? (full ? [lambda0, ...Array.from({ length: 24 }, (_, g) => lambda0 * Math.exp((g < 12 ? g - 12 : g - 11) * 0.02)), lambda0 * 0.5, lambda0 * 2, 0, lambdaMax]
+        : [lambda0, lambda0 * 0.9, lambda0 * 1.1, lambda0 * 0.75, lambda0 * 1.33, lambda0 * 0.5, lambda0 * 2])
+      : [0, ...Array.from({ length: full ? 30 : 16 }, (_, g) => lambdaMax * Math.pow(2, -g * (full ? 1 : 2)))];
+    const totals = new Float64Array(grid.length), best = new Float64Array(grid.length), bestOption = new Int32Array(grid.length);
+    const active: number[][] = [];
+    for (let i = 0; i < n; i++) {
+      const p = products[i];
+      best.fill(-Infinity); bestOption.fill(-1);
+      const bestAllowed = new Float64Array(grid.length).fill(-Infinity);
+      // Only prices the plan may use (expired or empty products keep the reference price, as in the local search).
+      for (const o of p.choosable) {
+        const c = leanCurve(p, o, omega, scratch, false);
+        for (let g = 0; g < grid.length; g++) {
+          const v = leanBest(p, c, grid[g], choice).value;
+          if (v > best[g]) best[g] = v;
+          // Reference price first, so it wins ties.
+          if (bestOption[g] < 0 || v > bestAllowed[g] + 1e-9 * Math.max(1, Math.abs(bestAllowed[g]))) { bestAllowed[g] = v; bestOption[g] = o; }
+        }
+      }
+      const options: number[] = [];
+      for (let g = 0; g < grid.length && options.length < MAX_ACTIVE; g++) if (bestOption[g] >= 0 && !options.includes(bestOption[g])) options.push(bestOption[g]);
+      active.push(options.length ? options : [p.choosable[0]]);
+      for (let g = 0; g < grid.length; g++) totals[g] += best[g];
+    }
+    let bound = Infinity;
+    for (let g = 0; g < grid.length; g++) bound = Math.min(bound, (Number.isFinite(B) ? grid[g] * B : (grid[g] > 0 ? Infinity : 0)) + totals[g]);
+    return { bound, active };
+  };
+
+  // Start: risk-neutral weights (a valid CVaR weighting).
+  const omegaBar = new Float64Array(S).fill(1 / S);
+  const best = { plan: null as LeanPlan | null, objective: -Infinity, P: null as Float64Array | null };
+  let bound = Infinity, lambda = 0;
+  const consider = (plan: LeanPlan) => {
+    const P = scenarioProfit(plan), value = objectiveOf(P, risk, k, work);
+    if (value > best.objective) { best.objective = value; best.plan = plan; best.P = P; }
+    return P;
+  };
+  if (warm && warm.q.length === n) consider({ q: Int32Array.from(warm.q), a: Int32Array.from(warm.a), option: Int32Array.from(reference) });
+  // Checkpoints: the bound at the best plan's own CVaR weighting is the tight one; stop once the certified gap is small.
+  const iterations = thorough ? 16 : 6, checkpoints = new Set(thorough ? [4, 8, 12] : [3]);
+  const certify = () => { if (best.P) bound = Math.min(bound, boundAndActive(tailWeights(best.P, risk, k), lambda, true).bound); return bound - best.objective <= 5e-4 * Math.max(1, Math.abs(best.objective)); };
+  for (let t = 0; t < iterations; t++) {
+    const pass = boundAndActive(omegaBar, lambda, n <= 200);
+    bound = Math.min(bound, pass.bound);
+    const active: Active[] = pass.active.map((options, i) => options.map(o => ({ o, curve: leanCurve(products[i], o, omegaBar, scratch, true) })));
+    const response = respond(active, lambda);
+    lambda = response.lambda;
+    const P = consider(response.plan);
+    if (checkpoints.has(t + 1) && certify()) break;
+    // Fictitious play: average the CVaR weighting of the new plan into the weights.
+    const omega = tailWeights(P, risk, k), step = 1 / (t + 2);
+    for (let s = 0; s < S; s++) omegaBar[s] += step * (omega[s] - omegaBar[s]);
+  }
+  certify();
+
+  // Materialise the best plan and improve it with budget-neutral swaps on the true objective.
+  const plan = best.plan ?? { q: new Int32Array(n), a: new Int32Array(n), option: Int32Array.from(reference) };
+  const models = items.map((_, i) => modelOf(i, plan.option[i]));
+  const allocator = new Allocator(models, B, risk, k);
+  let state = allocator.empty();
+  for (let i = 0; i < n; i++) if (plan.q[i] > 0 || plan.a[i] > 0) allocator.set(state, i, plan.q[i], plan.a[i]);
+  state = swapPolish(allocator, models, state, B, !thorough ? 1 : n > 200 ? 1 : 4);
+  return { state, models, optionModels: models.map(m => [m]), pricesFixed, bound: Math.max(state.objective, bound + Math.max(1e-7, Math.abs(bound) * 1e-9)) };
+}
+
+/**
+ * Local improvement for large plans: rank one-unit additions by objective gain per rupee and one-unit removals by
+ * loss per rupee (both exact), then try transfers between the best candidates; only improving moves are kept.
+ */
+function swapPolish(allocator: Allocator, models: Model[], state: State, budget: number, rounds: number): State {
+  const n = models.length;
+  const up = (x: State, i: number): [number, number] | null => {
+    const m = models[i], q = x.q[i], a = x.a[i];
+    if (m.cap <= 0 || q + a >= m.cap) return null;
+    const options: [number, number][] = [];
+    if (q < m.capPrepaid) options.push([q === 0 ? m.minimum : q + 1, a]);
+    if (a < m.capAllot) options.push([q, a + 1]);
+    let best: [number, number] | null = null, bestRatio = 0;
+    for (const [nq, na] of options) {
+      if (nq + na > m.cap) continue;
+      const cost = capital(m, nq, na) - capital(m, q, a);
+      if (!(cost > 0)) continue;
+      const ratio = (allocator.score(x, i, nq, na) - x.objective) / cost;
+      if (best === null || ratio > bestRatio) { best = [nq, na]; bestRatio = ratio; }
+    }
+    return best;
+  };
+  const down = (x: State, i: number): [number, number] | null => {
+    const m = models[i], q = x.q[i], a = x.a[i];
+    const options: [number, number][] = [];
+    if (a > 0) options.push([q, a - 1]);
+    if (q > 0) options.push([q - 1 < m.minimum ? 0 : q - 1, a]);
+    let best: [number, number] | null = null, bestRatio = Infinity;
+    for (const [nq, na] of options) {
+      const freed = capital(m, q, a) - capital(m, nq, na);
+      if (!(freed > 0)) continue;
+      const ratio = (x.objective - allocator.score(x, i, nq, na)) / freed;
+      if (best === null || ratio < bestRatio) { best = [nq, na]; bestRatio = ratio; }
+    }
+    return best;
+  };
+  for (let round = 0; round < rounds; round++) {
+    const gains: { i: number; move: [number, number]; ratio: number }[] = [], losses: { i: number; move: [number, number]; ratio: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const u = up(state, i);
+      if (u) { const m = models[i]; gains.push({ i, move: u, ratio: (allocator.score(state, i, u[0], u[1]) - state.objective) / (capital(m, u[0], u[1]) - capital(m, state.q[i], state.a[i])) }); }
+      const d = down(state, i);
+      if (d) { const m = models[i]; losses.push({ i, move: d, ratio: (state.objective - allocator.score(state, i, d[0], d[1])) / (capital(m, state.q[i], state.a[i]) - capital(m, d[0], d[1])) }); }
+    }
+    gains.sort((u, v) => v.ratio - u.ratio); losses.sort((u, v) => u.ratio - v.ratio);
+    let accepted = 0;
+    const K = Math.min(24, gains.length), L = Math.min(24, losses.length);
+    for (let gi = 0; gi < K; gi++) {
+      for (let li = 0; li < L; li++) {
+        const g = gains[gi], l = losses[li];
+        if (g.i === l.i) continue;
+        const add = up(state, g.i), remove = down(state, l.i);
+        if (!add || !remove) continue;
+        const before = state.objective, gq = state.q[g.i], ga = state.a[g.i], lq = state.q[l.i], la = state.a[l.i];
+        allocator.set(state, l.i, remove[0], remove[1]);
+        let addedOk = false;
+        if (state.spent + capital(models[g.i], add[0], add[1]) - capital(models[g.i], gq, ga) <= budget) { allocator.set(state, g.i, add[0], add[1]); addedOk = true; }
+        if (addedOk && state.objective > before + 1e-7 * Math.max(1, Math.abs(before))) { accepted++; break; }
+        if (addedOk) allocator.set(state, g.i, gq, ga);
+        allocator.set(state, l.i, lq, la);
+      }
+    }
+    // Top up any budget left over with the best single additions.
+    for (const g of gains) {
+      const add = up(state, g.i);
+      if (!add) continue;
+      const extra = capital(models[g.i], add[0], add[1]) - capital(models[g.i], state.q[g.i], state.a[g.i]);
+      if (state.spent + extra > budget) continue;
+      const before = state.objective, gq = state.q[g.i], ga = state.a[g.i];
+      allocator.set(state, g.i, add[0], add[1]);
+      if (state.objective > before + 1e-7 * Math.max(1, Math.abs(before))) accepted++; else allocator.set(state, g.i, gq, ga);
+    }
+    if (!accepted) break;
+  }
+  return state;
+}
+
 
 type Evaluated = { rows: PlanRow[]; metrics: RiskMetrics; servedShareBefore: number; histogram: RiskSummary['histogram']; P: Float64Array };
 
@@ -713,32 +1118,35 @@ function priceReasonFor(item: Opportunity, price: number, stock: number, units: 
 
 function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set: ScenarioSet, asOf: string, alpha: number, withRows: boolean, basis: BudgetBasis = 'cash'): Evaluated {
   const S = set.count, k = Math.max(1, Math.ceil(alpha * S));
-  const models = items.map((item, i) => buildModel(item, i, set, decisions[i].price, asOf, 0, basis));
-  const P = new Float64Array(S), profits = models.map(() => new Float64Array(S));
-  const soldMean = new Float64Array(items.length), unsoldCost = new Float64Array(items.length), unmetVectors = models.map(() => new Float64Array(S));
+  // Two passes, one product at a time (models are rebuilt for the rows), so memory stays O(S) per product
+  // instead of O(n·S) — needed for portfolios of thousands of products. Same arithmetic order as a single pass.
+  const modelAt = (i: number) => buildModel(items[i], i, set, decisions[i].price, asOf, 0, basis);
+  const unitsOf = (m: Model, i: number): [number, number] => { const q = Math.min(decisions[i].prepaid, m.cap); return [q, Math.min(decisions[i].allotment, Math.max(0, m.cap - q))]; };
+  const P = new Float64Array(S), capitalUsed = new Float64Array(items.length);
+  const soldMean = new Float64Array(items.length), unsoldCost = new Float64Array(items.length);
   let grossTotal = 0, stockServed = 0;
-  models.forEach((m, i) => {
-    const q = Math.min(decisions[i].prepaid, m.cap), a = Math.min(decisions[i].allotment, Math.max(0, m.cap - q));
+  for (let i = 0; i < items.length; i++) {
+    const m = modelAt(i), [q, a] = unitsOf(m, i);
+    capitalUsed[i] = capital(m, q, a);
     for (let s = 0; s < S; s++) {
       const v = profit(m, q, a, s) + m.stockTerm[s], [xq, xa] = sales(m, q, a, s);
-      profits[i][s] = v; P[s] += v;
+      P[s] += v;
       soldMean[i] += (xq + xa) / S;
       unsoldCost[i] += ((q - xq) * (m.buy - m.salvage) + (a - xa) * m.deposit * m.allotBuy) / S;
-      unmetVectors[i][s] = Math.max(0, m.demand[s] - xq - xa);
       grossTotal += m.gross[s] * m.marketScale / S; stockServed += Math.min(m.gross[s], m.stock) / S;
     }
-  });
+  }
   const order = Array.from({ length: S }, (_, s) => s).sort((u, v) => P[u] - P[v]);
   const tailSet = order.slice(0, k);
   const sortedP = Float64Array.from(order.map(s => P[s]));
   let mean = 0, losses = 0;
   for (let s = 0; s < S; s++) { mean += P[s] / S; if (P[s] < -1e-6) losses++; }
   const cvar = tailSet.reduce((sum, s) => sum + P[s], 0) / k;
-  const spend = models.reduce((sum, m, i) => sum + capital(m, Math.min(decisions[i].prepaid, m.cap), Math.min(decisions[i].allotment, Math.max(0, m.cap - Math.min(decisions[i].prepaid, m.cap)))), 0);
+  const spend = capitalUsed.reduce((sum, c) => sum + c, 0);
   const soldTotal = soldMean.reduce((a, b) => a + b, 0);
   const metrics: RiskMetrics = {
     spend, expectedProfit: mean, cvar, valueAtRisk: sortedP[k - 1], pLoss: losses / S, p05: quantile(sortedP, 0.05), p95: quantile(sortedP, 0.95),
-    servedShare: grossTotal > 0 ? (stockServed + soldTotal) / grossTotal : 0, expectedUnsold: models.reduce((sum, m, i) => sum + Math.max(0, decisions[i].prepaid + decisions[i].allotment - soldMean[i]), 0),
+    servedShare: grossTotal > 0 ? (stockServed + soldTotal) / grossTotal : 0, expectedUnsold: decisions.reduce((sum, d, i) => sum + Math.max(0, d.prepaid + d.allotment - soldMean[i]), 0),
   };
   const lo = sortedP[0], hi = sortedP[S - 1], bins = 28, width = (hi - lo) / bins || 1;
   const histogram = Array.from({ length: bins }, (_, b) => ({ from: lo + b * width, to: lo + (b + 1) * width, count: 0, tail: lo + (b + 1) * width <= metrics.valueAtRisk + 1e-9 }));
@@ -746,13 +1154,15 @@ function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set
   const rows: PlanRow[] = [];
   if (withRows) {
     const work = new Float64Array(S);
-    models.forEach((m, i) => {
-      const item = items[i], q = Math.min(decisions[i].prepaid, m.cap), a = Math.min(decisions[i].allotment, Math.max(0, m.cap - q)), units = q + a;
-      const v = profits[i], sorted = v.slice().sort();
+    items.forEach((item, i) => {
+      const m = modelAt(i), [q, a] = unitsOf(m, i), units = q + a;
+      const v = new Float64Array(S), unmetVector = new Float64Array(S);
+      for (let s = 0; s < S; s++) { v[s] = profit(m, q, a, s) + m.stockTerm[s]; const [xq, xa] = sales(m, q, a, s); unmetVector[s] = Math.max(0, m.demand[s] - xq - xa); }
+      const sorted = v.slice().sort();
       let expected = 0, itemLosses = 0, need = 0, unmet = 0, gross = 0, stock = 0;
-      for (let s = 0; s < S; s++) { expected += v[s] / S; if (v[s] < -1e-6) itemLosses++; need += m.demand[s] / S; unmet += unmetVectors[i][s] / S; gross += m.gross[s] * m.marketScale / S; stock += Math.min(m.gross[s], m.stock) / S; }
+      for (let s = 0; s < S; s++) { expected += v[s] / S; if (v[s] < -1e-6) itemLosses++; need += m.demand[s] / S; unmet += unmetVector[s] / S; gross += m.gross[s] * m.marketScale / S; stock += Math.min(m.gross[s], m.stock) / S; }
       const tail = tailSet.reduce((sum, s) => sum + v[s], 0) / k;
-      const unmetSorted = unmetVectors[i].slice().sort();
+      const unmetSorted = unmetVector.slice().sort();
       const timing = timingFor(item, asOf), lost = lostBookings(item);
       const advice = strategyFor({ expired: m.expired, prepaid: q, allotment: a, sellThrough: units > 0 ? soldMean[i] / units : 0, pLoss: units > 0 ? itemLosses / S : 0, tail, unmet, lost });
       rows.push({
@@ -773,7 +1183,7 @@ function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set
  * Options of the risk engine. `scenarioOverrides` changes the simulated world (planning and evaluation
  * scenarios alike); the model-risk check uses it to score fixed decisions in worlds the plan did not assume.
  */
-export type RiskPlanOptions = PlanOptions & { legacyRows?: PlanRow[]; scenarioOverrides?: Partial<ScenarioAssumptions> };
+export type RiskPlanOptions = PlanOptions & { legacyRows?: PlanRow[]; scenarioOverrides?: Partial<ScenarioAssumptions>; /** Default 'auto': local search up to LARGE_PORTFOLIO_THRESHOLD products, decomposition above. */ solver?: 'auto' | 'local-search' | 'decomposition' };
 
 function settings(options: RiskPlanOptions) {
   const asOf = options.asOf || new Date().toISOString().slice(0, 10);
@@ -812,14 +1222,16 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   const optSet = buildScenarioSet(items, o.scenarioCount, o.seed, o.overrides);
   const evalSet = buildScenarioSet(items, o.evaluationCount, o.seed + 7919, o.overrides);
   const k = Math.max(1, Math.ceil(o.alpha * o.scenarioCount));
-  const base = solvePortfolio(items, optSet, B, r, k, o.asOf, 0, jointPricing, true, undefined, undefined, o.basis);
+  const large = options.solver === 'decomposition' || (options.solver !== 'local-search' && items.length > LARGE_PORTFOLIO_THRESHOLD);
+  const algorithm: RiskOptimizedPlan['algorithm'] = large ? 'risk-cvar-decomposition' : 'risk-cvar-local-search';
+  const base = solvePortfolio(items, optSet, B, r, k, o.asOf, 0, jointPricing, true, undefined, undefined, o.basis, large);
   let chosen = base, maxAvailability: Decision[] | null = null;
   if (target > 0 && servedShareIn(base.models, base.state) < target) {
     // Smallest service value μ whose optimal plan serves the target share at the same prices: double, then bisect.
     const prices = base.models.map(m => m.price);
     // Doubling builds each plan from scratch (μ jumps a lot, so budget must move between products);
     // bisection and the final certified solve warm-start from the feasible end of the bracket.
-    const solve = (mu: number, thorough: boolean, warm?: State) => solvePortfolio(items, optSet, B, r, k, o.asOf, mu, false, thorough, prices, warm, o.basis);
+    const solve = (mu: number, thorough: boolean, warm?: State) => solvePortfolio(items, optSet, B, r, k, o.asOf, mu, false, thorough, prices, warm, o.basis, large);
     const meanPrice = Math.max(1, prices.reduce((sum, price) => sum + price, 0) / prices.length);
     let lo = 0, hi = 0.02 * meanPrice, reached = false, last: Solved = base, previousShare = servedShareIn(base.models, base.state);
     for (let t = 0; t < 9 && !reached; t++) {
@@ -851,8 +1263,9 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   }
   const { state, models, optionModels } = chosen;
   // Frank–Wolfe is only valid for fixed prices; the minimax bound covers every candidate price.
-  const fixedPriceBound = chosen.pricesFixed ? upperBound(models, state, r, k, B) : Infinity;
-  const bound = Math.max(state.objective, Math.min(fixedPriceBound, minimaxBound(optionModels, state, r, k, B) + Math.max(1e-7, Math.abs(state.objective) * 1e-12)));
+  const fixedPriceBound = chosen.pricesFixed && chosen.bound === undefined ? upperBound(models, state, r, k, B) : Infinity;
+  const bound = chosen.bound !== undefined ? Math.max(state.objective, chosen.bound)
+    : Math.max(state.objective, Math.min(fixedPriceBound, minimaxBound(optionModels, state, r, k, B) + Math.max(1e-7, Math.abs(state.objective) * 1e-12)));
   const decisions: Decision[] = items.map((_, i) => ({ prepaid: state.q[i], allotment: state.a[i], price: models[i].price }));
   const result = evaluate(items, decisions, r, evalSet, o.asOf, o.alpha, true, o.basis);
   if (chosen !== base) {
@@ -876,10 +1289,10 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   const rows = target > 0 ? result.rows.map(row => ({ ...row, serviceTarget: target })) : result.rows;
   return {
     rows, objective: state.objective, upperBound: bound, gap: Math.max(0, bound - state.objective), baselineObjective,
-    algorithm: 'risk-cvar-local-search', bucketCount: 0, engine: RISK_ENGINE_VERSION, pricing, service,
+    algorithm, bucketCount: 0, engine: RISK_ENGINE_VERSION, pricing, service,
     risk: { ...summaryBase, ...result.metrics, servedShareBefore: result.servedShareBefore, units: prepaidUnits + allotmentUnits, prepaidUnits, allotmentUnits, histogram: result.histogram, legacy },
   };
 }
 
 /** Exposed for tests (exhaustive-enumeration and bound-validity checks) only. */
-export const riskModelInternals = { buildModel, profit, capital, objectiveOf, sales };
+export const riskModelInternals = { buildModel, profit, capital, objectiveOf, sales, leanProduct, leanCurve, leanBest, leanScratch, tailWeights, candidatePrices };

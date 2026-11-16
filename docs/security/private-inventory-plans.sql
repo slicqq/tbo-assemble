@@ -4,7 +4,7 @@ CREATE TABLE public.private_inventory_plans (
  owner_id uuid NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
  name text NOT NULL CHECK (char_length(btrim(name)) BETWEEN 1 AND 100),
  source text NOT NULL CHECK (source IN ('synthetic', 'uploaded')),
- items jsonb NOT NULL CHECK (jsonb_typeof(items) = 'array' AND jsonb_array_length(items) BETWEEN 1 AND 20 AND octet_length(items::text) <= 100000),
+ items jsonb NOT NULL CHECK (jsonb_typeof(items) = 'array' AND jsonb_array_length(items) BETWEEN 1 AND 2000 AND octet_length(items::text) <= 4000000),
  budget bigint NOT NULL CHECK (budget BETWEEN 0 AND 1000000000),
  risk double precision NOT NULL CHECK (risk BETWEEN 0 AND 0.8),
  as_of date NOT NULL CHECK (as_of BETWEEN DATE '1900-01-01' AND DATE '2100-12-31'),

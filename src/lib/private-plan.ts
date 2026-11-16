@@ -1,3 +1,4 @@
+import { INPUT_LIMITS, formatLimit } from './input-limits';
 import { columns, optionalColumns, readInventoryCSV } from './inventory-csv';
 import type { Opportunity } from './procurement';
 
@@ -10,7 +11,7 @@ export function validatePlanInput(input: unknown): PlanInput {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid plan.');
   const obj = input as Record<string, unknown>;
   const { items, budget, risk, asOf, source } = obj;
-  if (!Array.isArray(items) || items.length < 1 || items.length > 20) throw new Error('A plan needs 1–20 inventory items.');
+  if (!Array.isArray(items) || items.length < 1 || items.length > INPUT_LIMITS.maxItems) throw new Error(`A plan needs 1–${formatLimit(INPUT_LIMITS.maxItems)} inventory items.`);
   if (typeof budget !== 'number' || !Number.isFinite(budget) || budget < 0 || budget > 1e9 || !Number.isInteger(budget)) throw new Error('Invalid budget.');
   if (typeof risk !== 'number' || !Number.isFinite(risk) || risk < 0 || risk > .8) throw new Error('Invalid risk setting.');
   if (typeof asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !Number.isFinite(Date.parse(asOf + 'T00:00:00Z')) || new Date(asOf + 'T00:00:00Z').toISOString().slice(0,10) !== asOf) throw new Error('Invalid quote review date.');

@@ -2,7 +2,7 @@ import { bestAtQuantity, createGreedyPlan, planRow, timingFor, purchaseCost, min
 import { optimizePortfolioRisk, RISK_ENGINE_VERSION, type RiskSummary, type ServiceSummary } from './risk-optimizer';
 
 type Choice={qty:number;cost:number;value:number};
-export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'|'risk-cvar-local-search'; bucketCount:number; engine?:PlanEngine; risk?:RiskSummary; pricing?:'joint'|'fixed'; service?:ServiceSummary};
+export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'|'risk-cvar-local-search'|'risk-cvar-decomposition'; bucketCount:number; engine?:PlanEngine; risk?:RiskSummary; pricing?:'joint'|'fixed'; service?:ServiceSummary};
 
 /** Engine that produced a set of rows, so what-if tools replan with the same engine. */
 export function engineOf(rows:PlanRow[]):PlanEngine{return rows.some(r=>r.engine===RISK_ENGINE_VERSION)?RISK_ENGINE_VERSION:'scenario-grid-v4';}

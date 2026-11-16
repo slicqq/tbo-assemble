@@ -23,7 +23,7 @@ Download the template from the dashboard. Its example row is synthetic. Replace 
 | integration | Supplier strategy label supplied by you, not an actual integration |
 | timing | Purchase timing label supplied by you, not optimized |
 
-Up to 20 rows, total capacity up to 3,000. Model forecasts are unvalidated heuristics and depend on comparable time windows. Price and cost must use the same unit and currency. Ensure you have rights to use the data and review your organization's handling rules before import. CSV files with quoted commas and quotes are supported. The opt-in live pageview scenario temporarily adjusts matching destinations in the allocation; it does not overwrite or save your manual inputs. Holidays remain context only. See live-attention-scenario.md for safeguards and limitations.
+Up to 2,000 rows (products), with up to 5,000 units of capacity per product and 500,000 in total. Portfolios above 30 products are planned in a background thread. Model forecasts are unvalidated heuristics and depend on comparable time windows. Price and cost must use the same unit and currency. Ensure you have rights to use the data and review your organization's handling rules before import. CSV files with quoted commas and quotes are supported. The opt-in live pageview scenario temporarily adjusts matching destinations in the allocation; it does not overwrite or save your manual inputs. Holidays remain context only. See live-attention-scenario.md for safeguards and limitations.
 
 ## Optional columns
 

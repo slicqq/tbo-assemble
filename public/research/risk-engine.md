@@ -32,7 +32,7 @@ The v4 grid planner (see [portfolio-optimizer.md](portfolio-optimizer.md)) score
    - **Allotment:** hold units by paying `allotmentDepositPct` × `allotmentBuy`. Units that sell pay the full `allotmentBuy`, with the deposit credited. Unused units are released at cut-off and the deposit is forfeited. This is deliberately conservative: a contract with free release is better than modelled.
    - Demand fills whichever unit is more valuable first.
 4. **Objective.** Maximise (1 − r) · E[season profit] + r · CVaR₁₀%, where CVaR₁₀% is the mean profit of the worst 10% of seasons. r is the existing risk slider (0–0.8). The plan must respect four constraints:
-   - **Budget = capital at risk:** pre-paid cost + allotment deposits + fixed fee. The maximum budget is a hard limit.
+   - **Budget (hard limit):** by default the cash committed — pre-paid cost + the full value of allotment units + fixed fee (`budgetBasis: "cash"`). Optionally capital at risk, where allotment units count only their deposit (`budgetBasis: "capital-at-risk"`).
    - **Supplier capacity:** the allotment capacity is capped at the product's capacity.
    - **Minimum order and fixed fee.**
    - **Quote expiry:** expired quotes cannot be bought.
@@ -165,6 +165,54 @@ Going from 84% to 91% availability costs almost no expected profit at this budge
 - At ₹20 L, the products whose allotments are full switch to "Extend allotment".
 - At ₹20 L, the v4 plan leaves both flight routes at zero units, so they show "Connect free-sale / API supply".
 
+## Large portfolios: decomposition solver and background planning
+
+TBO plans across thousands of hotel and flight products, so the planner has to scale well beyond a demo portfolio.
+
+**Why a second solver.** The local search above re-scores every product at every greedy step and moves budget between pairs of products. That is O(n²·S) per pass: 0.9 s at 20 products, 9 s at 40 and 23 s at 80. Above `LARGE_PORTFOLIO_THRESHOLD` (30 products), the planner switches to a decomposition solver (`solveLarge` in `src/lib/risk-optimizer.ts`).
+
+**How it works.** CVaR is the minimum, over scenario weightings ω, of the ω-weighted expected profit. Each weighting gives a season (1 − r)/S, plus up to r/k extra for the worst seasons. So, for any fixed ω, the problem splits by product once the budget is priced with a multiplier λ:
+
+    λ·B + Σᵢ max over (price, pre-paid units, allotment units) of [ Σₛ ωₛ·profitᵢ,ₛ − λ·costᵢ ]
+
+Each product's maximum is found exactly on two one-dimensional concave curves: one over all units, and one over the unit type that sells first. That takes O(log capacity) steps per price. The solver then repeats three steps:
+
+1. **Bisect λ** so that the plan spends the budget. Each product picks its price together with λ. (Choosing prices separately oscillates: higher prices need fewer units, which lowers λ, which favours lower prices again.)
+2. **Update the weights.** It averages the CVaR weighting of each new plan into ω (fictitious play).
+3. **Keep the best plan.** It keeps the plan with the best true objective, then improves it with budget-neutral unit swaps between products.
+
+**Proof of quality.** For any valid ω, the decomposition value is an upper bound on the best achievable objective (weak duality). So every run reports a certified gap, as the local search does. The bound uses the CVaR weighting of the chosen plan and covers every price the plan may use. Tests (`tests/risk-large.test.ts`) check four things:
+- the curves against the scenario profits for every price;
+- the per-product search against brute force;
+- the bound against exhaustive enumeration;
+- determinism.
+
+**Measured.** Setup: synthetic portfolios (`src/lib/synthetic-portfolio.ts`, invented numbers), a budget of 35% of full-capacity cost, risk 0.35, Node 20, one core.
+
+| Products | Time | Certified gap | Memory (RSS) |
+|---:|---:|---:|---:|
+| 20 | 0.13 s | 0.02% | ≈120 MB |
+| 200 | 1.1 s | 0.03% | 130 MB |
+| 500 | 1.7 s | 0.02% | 171 MB |
+| 1,000 | 3.6 s | 0.02% | 179 MB |
+| 2,000 | 6.7 s | 0.02% | 249 MB |
+
+**Head to head with the local search.** On the same scenarios, the decomposition's plan was as good or better in all six cases (the demo at r = 0, 0.35 and 0.8, and a 20-product portfolio at the same settings). Its certified gap was also tighter: 0.01–0.28% against 0.11–0.85%. At 40 products it found a better plan (objective ₹49.51 L vs ₹49.31 L) in 0.3 s instead of 9–14 s. Portfolios of up to 30 products still use the local search by default, so earlier results stay reproducible. `solver: "decomposition"` forces the new solver.
+
+**Background planning.** In the workspace, portfolios above 30 products are planned in a Web Worker (`src/lib/plan-worker.ts`, `src/lib/use-background-plan.ts`), so the page stays usable.
+- **Browser test (`qa` smoke, development build):** 1,000 products took 3.0–3.6 s. During planning, frames stayed under 100 ms.
+- **Result arrival:** decoding the result takes about 20 ms. Rendering it takes about 0.7 s in the React development build; this has not been measured in a production build here.
+- **Changing inputs:** a new budget or risk setting cancels the plan in progress. The previous plan stays on screen, marked as out of date, until the new one arrives.
+- **Display:** the overview shows the top 50 rows, with more on request; the CSV export has every row.
+- **Try it:** the *Inventory data* page has a "1,000-product test" button (invented numbers).
+
+**Limits** (`src/lib/input-limits.ts`):
+- 2,000 products per CSV file, API request or saved plan.
+- 5,000 units per product and 500,000 in total, which bounds solver memory.
+- A 4 MB API body (Vercel's limit is 4.5 MB).
+
+The legacy `scenario-grid-v4` engine is O(n²) in its greedy fallback: about 2 s at 100 products, 39 s at 500 and 161 s at 1,000. So v4, and the model-risk check that compares against it, accept at most 100 products. Above that, the API defaults to `risk-cvar-v5` and the workspace disables v4. With fixed pricing (`jointPricing: false`), the decomposition keeps each product's reference price; the local search uses a stand-alone price per product.
+
 ## Validation
 
 - `tests/risk-optimizer.test.ts` (9 tests):
@@ -209,11 +257,11 @@ Going from 84% to 91% availability costs almost no expected profit at this budge
 
 ## Limitations
 
-- **Pricing.** Prices are chosen jointly with quantities, but only from five candidates within ±10% of the reference price, with an assumed elasticity of −1.2. Cross-product substitution is not modelled.
+- **Pricing.** Prices are chosen jointly with quantities from 13 candidates (the reference price ±15% in 2.5% steps). Demand responds with each product's own elasticity: supplied, learned from price history, or the Lerner-implied prior (see `src/lib/learned-demand.ts`). Cross-product substitution is not modelled.
 - **Availability target.** The target is enforced on the planning seasons and covers modelled demand only. It does not include free-sale bookings made outside the plan.
 - **Supplier priorities.** The list ranks by gross booking value. It does not include the cost of integrating a supplier or free-sale margins.
 - **Allotments.** Release has a single cut-off. Contracts with free release or partial release penalties need extra terms.
-- **Scope.** Shocks are scenario assumptions, not forecasts of specific events. The engine shares v4's 20-row / 3,000-unit CSV and API limits.
+- **Scope.** Shocks are scenario assumptions, not forecasts of specific events. Plans take up to 2,000 products (5,000 units each, 500,000 in total); see *Large portfolios* below.
 
 ## API
 
@@ -222,7 +270,8 @@ POST /api/procurement/plan
 {"items":[...], "budget":5000000, "risk":0.35, "asOf":"2026-11-16", "engine":"risk-cvar-v5", "serviceTarget":0.9, "modelRisk":true}
 ```
 
-- `engine` is optional. It defaults to `scenario-grid-v4`; any other value returns 400.
+- `engine` is optional. It defaults to `scenario-grid-v4` for up to 100 items and to `risk-cvar-v5` above (v4 does not scale); any other value returns 400. `scenario-grid-v4` and `modelRisk` accept at most 100 items.
+- Limits: 1–2,000 items, 5,000 units of capacity per item and 500,000 in total, at most 120 history months per item, and a 4 MB request body (413 above). 1,000 items take about 4–6 s.
 - With v5, `summary` adds `cvar10`, `lossProbability`, `demandServedShare`, `demandServedShareBefore`, `prepaidUnits` and `allotmentUnits`.
 - `optimization.risk` carries the full risk summary, including the profit histogram.
 - `serviceTarget` (v5 only; 0–0.99) sets an availability target. `optimization.service` reports its status, the served share with and without the target, the implied value per booking and the profit and CVaR costs.

@@ -11,8 +11,8 @@ import { stayDate } from './buy-window';
  *
  * fitted on at most the latest 48 months, where U is unconstrained demand (bookings plus measured sold-out bookings):
  *  - seasonality: the month effects s give multiplicative month-of-year indices (geometric mean 1);
- *  - growth: the last 12 months over the 12 before (net of signal and price effects; season cancels), clamped to
- *    0.8–1.3; the in-window trend g only absorbs drift while the month effects are estimated;
+ *  - growth: the median of the last 12 year-on-year changes (net of signal and price effects; season cancels),
+ *    clamped to 0.8–1.3; the in-window trend g only absorbs drift while the month effects are estimated;
  *  - external signal: β (shrunk by m/(m+12) for short histories, clamped 0–2), applied to the product's `signal`
  *    (read as the target month's signal relative to its normal level);
  *  - price sensitivity: e combined with a prior (normal, sd 1: the Lerner-implied elasticity unless one is supplied),

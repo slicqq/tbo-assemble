@@ -20,7 +20,7 @@ for (let i = 0; i < opportunities.length; i++)
     assert.equal(back[i][k], opportunities[i][k], `${opportunities[i].id}.${k}`);
 
 // Out-of-range values are rejected with the column name.
-assert.throws(() => readInventoryCSV(csvTemplate.replace(',6850,0.25,60,640', ',6850,0.25,999,640')), /allotmentCapacity/);
+assert.throws(() => readInventoryCSV(csvTemplate.replace(',6850,0.25,60,640', ',6850,0.25,5001,640')), /allotmentCapacity/); // above the 5,000-unit limit (src/lib/input-limits.ts)
 assert.throws(() => readInventoryCSV(csvTemplate.replace(',6850,0.25,60,640', ',6850,1.5,60,640')), /allotmentDepositPct/);
 
 // Files without the new columns still load and plan exactly as before (backwards compatible).
