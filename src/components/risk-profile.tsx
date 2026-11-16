@@ -6,9 +6,18 @@ import { RISK_ASSUMPTIONS } from '@/lib/risk-scenarios';
 const money = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 const compact = (n: number) => (Math.abs(n) >= 1e7 ? `${n < 0 ? '−' : ''}₹${(Math.abs(n) / 1e7).toFixed(2)} Cr` : Math.abs(n) >= 1e5 ? `${n < 0 ? '−' : ''}₹${(Math.abs(n) / 1e5).toFixed(1)}L` : money(n));
 const pct = (n: number, digits = 1) => `${(n * 100).toFixed(digits)}%`;
+/** Profit (E) and worst-10% (CVaR) cost of an availability target, worded by sign. */
+const costText = (expectedCost: number, cvarCost: number) => {
+  const tail = `average profit in the worst 10% of seasons ${cvarCost > 0 ? `falls by ${compact(cvarCost)}` : cvarCost < 0 ? `rises by ${compact(-cvarCost)}` : 'is unchanged'}`;
+  if (expectedCost > 0) return `Cost: ${compact(expectedCost)} of expected profit, and ${tail}.`;
+  const mean = expectedCost < 0 ? `Expected profit rises by ${compact(-expectedCost)}` : 'Expected profit is unchanged';
+  return cvarCost > 0 ? `${mean}, but ${tail} — more stock means more downside.` : `${mean}, and ${tail}.`;
+};
 
-/** Out-of-sample season-profit distribution and same-scenario comparison with the legacy plan. */
-export default function RiskProfile({ plan }: { plan: OptimizedPlan }) {
+const AVAILABILITY_TARGETS = [0, 0.85, 0.9, 0.95] as const;
+
+/** Out-of-sample season-profit distribution, same-scenario comparison with the legacy plan, and the availability target. */
+export default function RiskProfile({ plan, target = 0, onTarget, pending = false }: { plan: OptimizedPlan; target?: number; onTarget?: (target: number) => void; pending?: boolean }) {
   const r = plan.risk;
   if (!r || !r.histogram.length) return null;
   const bins = r.histogram, max = Math.max(1, ...bins.map(b => b.count));
@@ -18,6 +27,11 @@ export default function RiskProfile({ plan }: { plan: OptimizedPlan }) {
   const bw = (W - L - R) / bins.length;
   const legacy = r.legacy;
   const gapShare = Math.abs(plan.objective) > 0 ? plan.gap / Math.abs(plan.objective) : 0;
+  const service = plan.service;
+  const serviceText = !service || service.status === 'off' ? null
+    : service.status === 'not-binding' ? `Target ${pct(service.target, 0)} is already met without changing the plan (serves ${pct(service.servedShare)}).`
+    : service.status === 'met' ? `Target ${pct(service.target, 0)} met: the plan serves ${pct(service.servedShare)} of modelled demand (${pct(service.servedShareWithoutTarget)} without the target). ${costText(service.expectedProfitCost, service.cvarCost)} Implied value: ${money(service.serviceValue)} per extra booking served.`
+    : `Target ${pct(service.target, 0)} is out of reach with this budget and supplier capacity (about ${pct(service.maxServedShare ?? service.servedShare)} at most). The plan is unchanged; raise the budget or connect more supply (see Coverage).`;
   const rows: { label: string; v5: string; v4?: string; better?: boolean }[] = [
     { label: 'Expected season profit', v5: compact(r.expectedProfit), v4: legacy && compact(legacy.expectedProfit), better: legacy && r.expectedProfit >= legacy.expectedProfit },
     { label: 'Worst 10% of seasons (CVaR)', v5: compact(r.cvar), v4: legacy && compact(legacy.cvar), better: legacy && r.cvar >= legacy.cvar },
@@ -56,7 +70,16 @@ export default function RiskProfile({ plan }: { plan: OptimizedPlan }) {
             <thead><tr><th scope="col">Same scenarios</th><th scope="col">Risk engine (v5)</th>{legacy && <th scope="col">Legacy grid plan (v4)</th>}</tr></thead>
             <tbody>{rows.map(row => <tr key={row.label}><th scope="row">{row.label}</th><td className={row.better ? 'better' : ''}>{row.v5}</td>{legacy && <td>{row.v4}</td>}</tr>)}</tbody>
           </table>
-          <p className="risk-gap"><strong>Optimality check:</strong> {gapShare < 0.0005 ? 'less than 0.05%' : pct(gapShare, gapShare < 0.01 ? 2 : 1)} below a proven upper bound on the best achievable plan for this model ({money(plan.upperBound)}).</p>
+          {onTarget && (
+            <div className="risk-target">
+              <label htmlFor="availability-target">Availability target <span>serve at least this share of modelled demand</span></label>
+              <select id="availability-target" value={String(target)} onChange={e => onTarget(Number(e.target.value))}>
+                {AVAILABILITY_TARGETS.map(t => <option key={t} value={String(t)}>{t === 0 ? 'Off — maximise risk-adjusted profit' : `At least ${pct(t, 0)} of demand`}</option>)}
+              </select>
+              {pending ? <p className="risk-target-status" role="status">Re-planning…</p> : serviceText && <p className={`risk-target-status ${service?.status ?? ''}`} role="status">{serviceText}</p>}
+            </div>
+          )}
+          <p className="risk-gap"><strong>Optimality check:</strong> {gapShare < 0.0005 ? 'less than 0.05%' : pct(gapShare, gapShare < 0.01 ? 2 : 1)} below a proven upper bound on the best achievable plan for this model ({money(plan.upperBound)}){plan.pricing === 'joint' ? ', with selling prices chosen together with quantities' : ''}{service && service.serviceValue > 0 ? '; objective includes the availability value' : ''}.</p>
           <p className="risk-note">{r.prepaidUnits.toLocaleString('en-IN')} pre-paid and {r.allotmentUnits.toLocaleString('en-IN')} allotment units. Demand served counts existing stock plus new units ({pct(r.servedShareBefore, 0)} with existing stock only). Results are model estimates on the loaded inputs, not forecasts of actual profit.</p>
         </div>
       </div>

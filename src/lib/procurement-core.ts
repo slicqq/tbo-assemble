@@ -17,10 +17,10 @@ export const opportunities: Opportunity[] = [
 ];
 export type PlanRow = Opportunity & { forecast:number; price:number; qty:number; spend:number; expectedProfit:number; downsideProfit:number; baseProfit:number; upsideProfit:number; expectedSold:number; expectedUnsold:number; unsoldExposure:number; objective:number; purchaseTiming:string; timingReason:string; strategy:string; strategyReason:string;
  /** risk-cvar-v5 only. `qty` is then the total committed units = prepaidQty + allotQty, and `spend` is capital at risk. */
- engine?:PlanEngine; prepaidQty?:number; allotQty?:number; prepaidSpend?:number; allotSpend?:number; pLoss?:number; tailProfit?:number; lostDemand?:number; servedShare?:number;
+ engine?:PlanEngine; /** risk-cvar-v5 availability target (0–0.99) the plan was built with; what-if re-plans reuse it. */ serviceTarget?:number; prepaidQty?:number; allotQty?:number; prepaidSpend?:number; allotSpend?:number; pLoss?:number; tailProfit?:number; lostDemand?:number; servedShare?:number;
  coverage?:{need:number;served:number;unmet:number;highUnmet:number};
  buyWindow?:{leadDays:number;optimalLead:number;windowStart:number;windowEnd:number;status:'early'|'in-window'|'late'|'past';label:string;reason:string} };
-export type PlanOptions = { asOf?:string; engine?:PlanEngine; scenarioCount?:number; evaluationCount?:number; seed?:number; /** risk-cvar-v5: also score the legacy v4 plan on the same scenarios (used by the risk panel). */ compareLegacy?:boolean };
+export type PlanOptions = { asOf?:string; engine?:PlanEngine; scenarioCount?:number; evaluationCount?:number; seed?:number; /** risk-cvar-v5: also score the legacy v4 plan on the same scenarios (used by the risk panel). */ compareLegacy?:boolean; /** risk-cvar-v5: minimum expected share (0–0.99) of modelled demand to serve; 0/undefined = off. */ serviceTarget?:number; /** risk-cvar-v5: choose selling prices jointly with quantities (default true). */ jointPricing?:boolean };
 const dayMs=86400000;
 export function timingFor(o:Opportunity, asOf:string) {
  if (!o.quoteExpiry) return {purchaseTiming:'Verify quote', timingReason:'No expiry date supplied; confirm the quote before buying.', expired:false};

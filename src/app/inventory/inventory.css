@@ -296,3 +296,37 @@
   .risk-compare th, .risk-compare td { padding: 8px 5px; font-size: 12px; }
   .risk-compare th[scope="row"] { font-size: 12px; }
 }
+
+/* Availability target (risk panel) */
+.risk-target { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--secondary, #f8fafc); }
+.risk-target label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--foreground); }
+.risk-target label span { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted-foreground); }
+.risk-target select { width: 100%; height: 40px; margin-top: 8px; border: 1px solid var(--input); border-radius: 9px; padding: 0 10px; background: var(--background); color: var(--foreground); font-weight: 600; font-size: 13px; }
+.risk-target-status { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.risk-target-status.met { color: #166534; }
+.risk-target-status.unreachable { color: #9a3412; }
+
+/* Supplier-integration priorities (coverage page) and model-risk check (stress page): own classes so existing .coverage-panel selectors stay unique */
+.supplier-panel, .model-risk-panel { padding: 24px; margin-top: 24px; }
+@media (max-width: 600px) { .supplier-panel, .model-risk-panel { padding: 18px; } }
+.supplier-summary { margin: 18px 0; font-size: 13px; line-height: 1.6; color: #475569; }
+.supplier-summary strong { color: #0f172a; font-size: 15px; }
+.supplier-panel .coverage-table-wrap table { min-width: 980px; }
+.supplier-step { white-space: normal !important; min-width: 280px; max-width: 420px; }
+.supplier-step small { line-height: 1.45; }
+.supplier-action { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #eef2f7; color: #334155; }
+.supplier-action.connect { background: #e8f1ff; color: #1d4ed8; }
+.supplier-action.topup { background: #eefaf3; color: #15803d; }
+.supplier-action.negotiate { background: #fff5e6; color: #b45309; }
+.supplier-action.refresh { background: #fdecec; color: #b91c1c; }
+
+/* Model-risk check (stress-test page) */
+.model-risk-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin: 18px 0; }
+.model-risk-actions span { font-size: 12px; color: #64748b; line-height: 1.5; flex: 1 1 260px; min-width: 0; }
+.model-risk-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.model-risk-summary > div { border: 1px solid #e3ebf5; border-radius: 12px; padding: 14px; background: #f8fbff; min-width: 0; }
+.model-risk-summary span, .model-risk-summary small { display: block; font-size: 11px; color: #64748b; line-height: 1.45; }
+.model-risk-summary strong { display: block; margin: 5px 0; font-size: 18px; color: #15335c; }
+.model-risk-panel td.better { font-weight: 700; color: #15803d; }
+.model-risk-panel .coverage-table-wrap td:first-child { white-space: normal; min-width: 220px; }
+@media (max-width: 800px) { .model-risk-summary { grid-template-columns: 1fr; } }

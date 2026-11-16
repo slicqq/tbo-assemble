@@ -1,4 +1,4 @@
-import {engineOf,optimizePortfolio} from './portfolio-optimizer';
+import {optimizePortfolio,planOptionsOf} from './portfolio-optimizer';
 import type {Opportunity,PlanRow} from './procurement-core';
 
 export type LandedCostSettings={itemId:string;percent:number;perUnit:number};
@@ -10,7 +10,7 @@ export function compareLandedCost(items:Opportunity[],baseRows:PlanRow[],budget:
  const added=target.buy*settings.percent/100+settings.perUnit;
  const landed=target.buy+added;
  const changed=items.map(item=>item.id!==target.id?item:{...item,buy:landed,recoveryPct:item.buy*(item.recoveryPct??0)/landed});
- const scenario=settings.percent===0&&settings.perUnit===0?baseRows:optimizePortfolio(changed,budget,risk,{asOf,engine:engineOf(baseRows)}).rows;
+ const scenario=settings.percent===0&&settings.perUnit===0?baseRows:optimizePortfolio(changed,budget,risk,{asOf,...planOptionsOf(baseRows)}).rows;
  const totals=(rows:PlanRow[])=>rows.reduce((a,r)=>({spend:a.spend+r.spend,profit:a.profit+r.expectedProfit,downside:a.downside+r.downsideProfit,objective:a.objective+r.objective}),{spend:0,profit:0,downside:0,objective:0});
  return {target,landed,added,baseline:totals(baseRows),scenario:totals(scenario),rows:scenario,changes:scenario.map(row=>({row,old:baseRows.find(r=>r.id===row.id)}))};
 }

@@ -87,9 +87,29 @@ export type ScenarioSet = {
  * Builds `count` joint seasons. Random streams are keyed by seed + region/product id, so editing
  * one product does not reshuffle the draws of unrelated products or regions.
  */
-export function buildScenarioSet(items: Opportunity[], count: number, seed: number): ScenarioSet {
+/**
+ * The planning assumptions plus four "the world differs from the plan" levers used by the model-risk
+ * check (src/lib/model-risk.ts). Defaults reproduce RISK_ASSUMPTIONS exactly. Random streams are consumed in
+ * the same order whatever the overrides, so worlds share their draws (common random numbers).
+ */
+export type ScenarioAssumptions = {
+  -readonly [K in keyof typeof RISK_ASSUMPTIONS]: (typeof RISK_ASSUMPTIONS)[K] extends readonly [number, number] ? readonly [number, number] : number;
+} & {
+  /** Realised demand ÷ planned demand (e.g. 0.85 = the forecast was 15% too high). */
+  demandBias: number;
+  /** Realised selling price ÷ planned price. */
+  priceBias: number;
+  /** Realised cancellation rate ÷ supplied rate. */
+  cancellationMultiplier: number;
+  /** Realised demand volatility ÷ supplied volatility. */
+  volatilityMultiplier: number;
+};
+export const DEFAULT_SCENARIO_ASSUMPTIONS: ScenarioAssumptions = { ...RISK_ASSUMPTIONS, demandBias: 1, priceBias: 1, cancellationMultiplier: 1, volatilityMultiplier: 1 };
+
+export function buildScenarioSet(items: Opportunity[], count: number, seed: number, overrides: Partial<ScenarioAssumptions> = {}): ScenarioSet {
   if (!Number.isInteger(count) || count < 20 || count > 20000) throw new Error('Scenario count must be a whole number from 20 to 20,000.');
-  const A = RISK_ASSUMPTIONS;
+  const A: ScenarioAssumptions = { ...DEFAULT_SCENARIO_ASSUMPTIONS, ...overrides };
+  if (!(A.globalWeight >= 0 && A.regionWeight >= 0 && A.globalWeight + A.regionWeight <= 1)) throw new Error('Global and regional correlation weights must be non-negative and sum to at most 1.');
   const regions = items.map(item => regionOf(item.destination));
 
   // Global factor and global shock.
@@ -120,11 +140,11 @@ export function buildScenarioSet(items: Opportunity[], count: number, seed: numb
     else for (const shock of regionShock.values()) if (shock[s] < 1) { shockFlag[s] = 1; break; }
   }
 
-  const loadGlobal = Math.sqrt(A.globalWeight), loadRegion = Math.sqrt(A.regionWeight), loadOwn = Math.sqrt(1 - A.globalWeight - A.regionWeight);
+  const loadGlobal = Math.sqrt(A.globalWeight), loadRegion = Math.sqrt(A.regionWeight), loadOwn = Math.sqrt(Math.max(0, 1 - A.globalWeight - A.regionWeight));
   const demand: Float64Array[] = [], price: Float64Array[] = [];
   items.forEach((item, i) => {
     const random = seededRandom(seed ^ hashString('item:' + item.id));
-    const sigma = Math.max(0, Math.min(1.5, item.volatility));
+    const sigma = Math.max(0, Math.min(1.5, item.volatility * A.volatilityMultiplier));
     const baseCancel = Math.max(0, Math.min(0.95, item.cancellations));
     const zRegion = regionZ.get(regions[i])!, sRegion = regionShock.get(regions[i])!;
     const d = new Float64Array(count), p = new Float64Array(count);
@@ -134,11 +154,11 @@ export function buildScenarioSet(items: Opportunity[], count: number, seed: numb
       const shocked = globalShock[s] < 1 || sRegion[s] < 1;
       // Mean-preserving lognormal before shocks; shocks then lower demand in that season.
       const level = Math.exp(sigma * z - sigma * sigma / 2) * globalShock[s] * sRegion[s];
-      const cancel = Math.min(0.95, baseCancel * Math.exp(A.cancellationSigma * cancelNoise - A.cancellationSigma ** 2 / 2) * (shocked ? A.shockCancellationMultiplier : 1));
+      const cancel = Math.min(0.95, baseCancel * A.cancellationMultiplier * Math.exp(A.cancellationSigma * cancelNoise - A.cancellationSigma ** 2 / 2) * (shocked ? A.shockCancellationMultiplier : 1));
       const cancelAdjustment = baseCancel < 0.95 ? (1 - cancel) / (1 - baseCancel) : 0;
-      d[s] = Math.max(0, level * cancelAdjustment);
+      d[s] = Math.max(0, level * cancelAdjustment * A.demandBias);
       const shockMultiplier = shocked ? A.shockPriceRange[0] + (A.shockPriceRange[1] - A.shockPriceRange[0]) * shockPrice : 1;
-      p[s] = Math.exp(A.priceSigma * priceNoise - A.priceSigma ** 2 / 2) * shockMultiplier;
+      p[s] = Math.exp(A.priceSigma * priceNoise - A.priceSigma ** 2 / 2) * shockMultiplier * A.priceBias;
     }
     demand.push(d); price.push(p);
   });

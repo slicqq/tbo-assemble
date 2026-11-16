@@ -1,5 +1,5 @@
 import {evaluateAtPrice,type Opportunity,type PlanRow} from './procurement-core';
-import {engineOf,optimizePortfolio} from './portfolio-optimizer';
+import {engineOf,optimizePortfolio,planOptionsOf} from './portfolio-optimizer';
 import {evaluateDecisions,RISK_ENGINE_VERSION} from './risk-optimizer';
 
 export type StressSettings={demandPercent:number;pricePercent:number;newQuotePercent:number;cancellationPoints:number};
@@ -17,7 +17,7 @@ export function simulatePortfolioStress(baseRows:PlanRow[],budget:number,risk:nu
  const riskFixed=engine===RISK_ENGINE_VERSION?evaluateDecisions(baseRows.map(row=>stressed(row,false)),baseRows.map(row=>({prepaid:row.prepaidQty??row.qty,allotment:row.allotQty??0,price:Math.max(1,Math.round(row.price*(1+price/100)))})),risk,{asOf}).rows:null;
  const fixedRows=baseRows.map((row,i)=>{const item=stressed(row,false),salePrice=Math.max(1,Math.round(row.price*(1+price/100))),calc=riskFixed?{expectedSold:riskFixed[i].expectedSold,expectedUnsold:riskFixed[i].expectedUnsold,unsoldExposure:riskFixed[i].unsoldExposure,expectedProfit:riskFixed[i].expectedProfit,downsideProfit:riskFixed[i].downsideProfit,baseProfit:riskFixed[i].baseProfit,upsideProfit:riskFixed[i].upsideProfit,objective:riskFixed[i].objective}:evaluateAtPrice(item,row.qty,salePrice,risk);return {id:row.id,name:row.name,period:row.period,qty:row.qty,price:salePrice,spend:row.spend,...calc,originalExpectedProfit:row.expectedProfit,delta:calc.expectedProfit-row.expectedProfit};});
  const baseline=summarize(baseRows),fixed=summarize(fixedRows);
- const replannedRows=demand===0&&price===0&&quote===0&&cancel===0?baseRows:optimizePortfolio(baseRows.map(row=>stressed(row,true)),budget,risk,{asOf,engine}).rows;
+ const replannedRows=demand===0&&price===0&&quote===0&&cancel===0?baseRows:optimizePortfolio(baseRows.map(row=>stressed(row,true)),budget,risk,{asOf,...planOptionsOf(baseRows)}).rows;
  const replanned=summarize(replannedRows);
  return {baseline,fixed,replanned,exposures:fixedRows.filter(r=>r.qty>0).sort((a,b)=>a.delta-b.delta),replannedRows};
 }

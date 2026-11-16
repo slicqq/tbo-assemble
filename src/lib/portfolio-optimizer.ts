@@ -1,11 +1,13 @@
 import { bestAtQuantity, createGreedyPlan, planRow, timingFor, purchaseCost, minimumPurchase, type Opportunity, type PlanEngine, type PlanOptions, type PlanRow } from './procurement-core';
-import { optimizePortfolioRisk, RISK_ENGINE_VERSION, type RiskSummary } from './risk-optimizer';
+import { optimizePortfolioRisk, RISK_ENGINE_VERSION, type RiskSummary, type ServiceSummary } from './risk-optimizer';
 
 type Choice={qty:number;cost:number;value:number};
-export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'|'risk-cvar-local-search'; bucketCount:number; engine?:PlanEngine; risk?:RiskSummary};
+export type OptimizedPlan={rows:PlanRow[]; objective:number; upperBound:number; gap:number; baselineObjective:number; algorithm:'discrete-budget'|'greedy-fallback'|'risk-cvar-local-search'; bucketCount:number; engine?:PlanEngine; risk?:RiskSummary; pricing?:'joint'|'fixed'; service?:ServiceSummary};
 
 /** Engine that produced a set of rows, so what-if tools replan with the same engine. */
 export function engineOf(rows:PlanRow[]):PlanEngine{return rows.some(r=>r.engine===RISK_ENGINE_VERSION)?RISK_ENGINE_VERSION:'scenario-grid-v4';}
+/** Engine and availability target a plan was built with, so what-if re-plans use the same settings. */
+export function planOptionsOf(rows:PlanRow[]):{engine:PlanEngine;serviceTarget?:number}{const engine=engineOf(rows);const target=engine===RISK_ENGINE_VERSION?rows.find(r=>(r.serviceTarget??0)>0)?.serviceTarget:undefined;return target?{engine,serviceTarget:target}:{engine};}
 
 /**
  * Entry point for every planner in the app. `engine: 'risk-cvar-v5'` runs the portfolio risk engine

@@ -1,5 +1,5 @@
 import { timingFor, type Opportunity, type PlanOptions, type PlanRow } from './procurement-core';
-import { buildScenarioSet, type ScenarioSet } from './risk-scenarios';
+import { buildScenarioSet, type ScenarioAssumptions, type ScenarioSet } from './risk-scenarios';
 import { forecastUnconstrained, lostBookings } from './demand-unconstraining';
 import { buyWindowFor } from './buy-window';
 
@@ -32,20 +32,45 @@ export type RiskSummary = RiskMetrics & {
   histogram: { from: number; to: number; count: number; tail: boolean }[];
   legacy?: RiskMetrics;
 };
+/**
+ * Availability target: the minimum expected share of modelled demand (incl. existing stock) the plan
+ * should serve. The planner meets it by adding the smallest per-booking "service value" μ to every
+ * unit sold that makes the optimal plan reach the target, so the trade-off stays explicit: μ is the
+ * implied value of one more booking served, and the costs show the profit and CVaR given up.
+ */
+export type ServiceSummary = {
+  target: number;
+  status: 'off' | 'not-binding' | 'met' | 'unreachable';
+  /** Out-of-sample share of modelled demand served by the chosen plan (incl. existing stock). */
+  servedShare: number;
+  /** The same measure for the plan without a target. */
+  servedShareWithoutTarget: number;
+  /** Implied ₹ value per extra booking served needed to meet the target (0 when off or not binding). */
+  serviceValue: number;
+  /** Out-of-sample expected profit and CVaR given up versus the plan without a target. */
+  expectedProfitCost: number;
+  cvarCost: number;
+  /** When unreachable: about the most demand this budget and supplier capacity can serve (out-of-sample). */
+  maxServedShare?: number;
+};
 export type RiskOptimizedPlan = {
   rows: PlanRow[]; objective: number; upperBound: number; gap: number; baselineObjective: number;
   algorithm: 'risk-cvar-local-search'; bucketCount: number; engine: typeof RISK_ENGINE_VERSION; risk: RiskSummary;
+  /** 'joint': selling prices are chosen together with quantities and covered by the upper bound. */
+  pricing: 'joint' | 'fixed'; service: ServiceSummary;
 };
 
 type Model = {
   item: Opportunity; price: number; demand: Float64Array; gross: Float64Array; priceMultiplier: Float64Array;
   buy: number; salvage: number; allotBuy: number; deposit: number; capPrepaid: number; capAllot: number; cap: number;
   minimum: number; fee: number; stock: number; expired: boolean;
+  /** Availability-target service value μ (₹ per unit sold) added to the optimisation objective only; 0 for reporting. */
+  serviceValue: number;
 };
 
 const clamp = (x: number, lo: number, hi: number) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : lo);
 
-function buildModel(item: Opportunity, index: number, set: ScenarioSet, price: number, asOf: string): Model {
+function buildModel(item: Opportunity, index: number, set: ScenarioSet, price: number, asOf: string, serviceValue = 0): Model {
   const base = forecastUnconstrained(item) * Math.pow(price / item.referencePrice, PRICE_ELASTICITY);
   const stock = Math.max(0, item.existingStock || 0);
   const demand = new Float64Array(set.count), gross = new Float64Array(set.count);
@@ -59,13 +84,14 @@ function buildModel(item: Opportunity, index: number, set: ScenarioSet, price: n
     allotBuy: hasAllot ? item.allotmentBuy! : 0, deposit: hasAllot ? clamp(item.allotmentDepositPct ?? DEFAULT_ALLOTMENT_DEPOSIT, 0, 1) : 0,
     capPrepaid: cap, capAllot: hasAllot ? Math.min(cap, Math.floor(item.allotmentCapacity!)) : 0, cap,
     minimum: Math.max(1, Math.floor(item.minOrderUnits ?? 1)), fee: Math.max(0, item.fixedOrderFee ?? 0), stock, expired,
+    serviceValue: Math.max(0, Number.isFinite(serviceValue) ? serviceValue : 0),
   };
 }
 
 /** Units sold in scenario s. Each unit type is sold only when selling beats leaving it unsold, best value first. */
 function sales(m: Model, q: number, a: number, s: number): [number, number] {
   if (q <= 0 && a <= 0) return [0, 0];
-  const p = m.price * m.priceMultiplier[s], d = m.demand[s];
+  const p = m.price * m.priceMultiplier[s] + m.serviceValue, d = m.demand[s];
   const vq = p - m.salvage, va = a > 0 ? p - m.allotBuy * (1 - m.deposit) : -Infinity;
   let xq = 0, xa = 0;
   if (vq >= va) { if (vq > 0) xq = Math.min(q, d); if (va > 0) xa = Math.min(a, d - xq); }
@@ -77,7 +103,7 @@ function profit(m: Model, q: number, a: number, s: number): number {
   if (q <= 0 && a <= 0) return 0;
   const [xq, xa] = sales(m, q, a, s);
   const p = m.price * m.priceMultiplier[s];
-  return xq * p + (q - xq) * m.salvage - q * m.buy + xa * (p - m.allotBuy) - (a - xa) * m.deposit * m.allotBuy - m.fee;
+  return xq * p + (q - xq) * m.salvage - q * m.buy + xa * (p - m.allotBuy) - (a - xa) * m.deposit * m.allotBuy - m.fee + m.serviceValue * (xq + xa);
 }
 
 /** Budget usage = capital at risk: full pre-paid cost, allotment deposits and the fixed fee. */
@@ -114,14 +140,20 @@ function objectiveOf(P: Float64Array, risk: number, k: number, work: Float64Arra
   return (1 - risk) * (sum / P.length) + risk * smallestMean(P, k, work);
 }
 
-function choosePrice(item: Opportunity, index: number, set: ScenarioSet, risk: number, k: number, asOf: string, budget: number): number {
+/** The five candidate selling prices (deduplicated after rounding), reference price first. */
+function candidatePrices(item: Opportunity): number[] {
+  return Array.from(new Set(PRICE_MULTIPLIERS.map(multiplier => Math.max(1, Math.round(item.referencePrice * multiplier)))));
+}
+
+/** Stand-alone starting price for one product (its own objective at a few quantities). Joint pricing refines it. */
+function choosePrice(item: Opportunity, index: number, set: ScenarioSet, risk: number, k: number, asOf: string, budget: number, serviceValue = 0): number {
   const reference = Math.max(1, Math.round(item.referencePrice));
   if (timingFor(item, asOf).expired || item.capacity <= 0) return reference;
   const work = new Float64Array(set.count), vec = new Float64Array(set.count);
   let bestPrice = reference, bestScore = 0;
   for (const multiplier of PRICE_MULTIPLIERS) {
     const price = Math.max(1, Math.round(item.referencePrice * multiplier));
-    const m = buildModel(item, index, set, price, asOf);
+    const m = buildModel(item, index, set, price, asOf, serviceValue);
     const candidates: [number, number][] = [];
     const maxQ = Math.min(m.capPrepaid, Math.floor((budget - m.fee) / m.buy));
     if (maxQ >= m.minimum) for (let j = 0; j <= 20; j++) candidates.push([Math.round(m.minimum + (maxQ - m.minimum) * j / 20), 0]);
@@ -163,6 +195,12 @@ class Allocator {
     const m = this.models[i], old = x.itemProfit[i], t = this.trial;
     for (let s = 0; s < this.S; s++) t[s] = x.P[s] - old[s] + profit(m, q, a, s);
     return objectiveOf(t, this.risk, this.k, this.work);
+  }
+  /** Recomputes item i's scenario profits after its model (price) changed; quantities are unchanged. */
+  rebase(x: State, i: number): void {
+    const m = this.models[i], old = x.itemProfit[i];
+    for (let s = 0; s < this.S; s++) { const v = profit(m, x.q[i], x.a[i], s); x.P[s] += v - old[s]; old[s] = v; }
+    x.objective = objectiveOf(x.P, this.risk, this.k, this.work);
   }
   set(x: State, i: number, q: number, a: number): void {
     const m = this.models[i], old = x.itemProfit[i];
@@ -254,6 +292,29 @@ class Allocator {
     }
     return current;
   }
+  /**
+   * Empty-plan escape: when no single product is worth buying on its own (each adds more tail risk than
+   * value), a pair can still pay through diversification. Tries the smallest increment of every pair of
+   * products and keeps the best improving one. Only acts on an empty plan, so non-empty plans are unchanged.
+   */
+  seedPair(x: State): boolean {
+    if (x.q.some(v => v > 0) || x.a.some(v => v > 0)) return false;
+    const first = (m: Model): [number, number][] => [...(m.capPrepaid >= m.minimum && m.cap >= m.minimum ? [[m.minimum, 0] as [number, number]] : []), ...(m.capAllot > 0 ? [[0, 1] as [number, number]] : [])];
+    const t = this.trial;
+    let best = x.objective + 1e-9 * Math.max(1, Math.abs(x.objective)), choice: [number, number, number, number, number, number] | null = null;
+    for (let i = 0; i < this.models.length; i++) for (let j = i + 1; j < this.models.length; j++) {
+      for (const [qi, ai] of first(this.models[i])) for (const [qj, aj] of first(this.models[j])) {
+        if (capital(this.models[i], qi, ai) + capital(this.models[j], qj, aj) > this.budget) continue;
+        for (let s = 0; s < this.S; s++) t[s] = profit(this.models[i], qi, ai, s) + profit(this.models[j], qj, aj, s);
+        const v = objectiveOf(t, this.risk, this.k, this.work);
+        if (v > best) { best = v; choice = [i, qi, ai, j, qj, aj]; }
+      }
+    }
+    if (!choice) return false;
+    this.set(x, choice[0], choice[1], choice[2]);
+    this.set(x, choice[3], choice[4], choice[5]);
+    return true;
+  }
   /** Cheap pass: per-product best responses, then top up any remaining budget. */
   light(x: State): void {
     for (let round = 0; round < 3; round++) {
@@ -262,6 +323,7 @@ class Allocator {
       if (!any) break;
     }
     this.fill(x, 1);
+    if (this.seedPair(x)) this.light(x);
   }
   /** Full local search: per-product best responses, then budget re-allocation between products. */
   improve(x: State, maxCap: number): State {
@@ -283,7 +345,7 @@ class Allocator {
 
 /** LP-dual supergradient of one product's scenario profit with respect to (pre-paid, allotment) units; fees excluded. */
 function supergradient(m: Model, q: number, a: number, s: number): [number, number] {
-  const p = m.price * m.priceMultiplier[s], d = m.demand[s];
+  const p = m.price * m.priceMultiplier[s] + m.serviceValue, d = m.demand[s];
   const vq = p - m.salvage, va = m.capAllot > 0 ? p - m.allotBuy * (1 - m.deposit) : -Infinity;
   const prepaidFirst = vq >= va;
   const vh = prepaidFirst ? vq : va, vl = prepaidFirst ? va : vq, ch = prepaidFirst ? q : a, cl = prepaidFirst ? a : q;
@@ -403,18 +465,18 @@ function minCurve(w: Float64Array, d: Float64Array, U: number): Float64Array {
  * Per product this splits into 1-D concave curves (total units and the higher-value unit type), which
  * allows an exact search over whole units for each budget multiplier λ. Fees and minimums are relaxed.
  */
-function minimaxBound(models: Model[], x: State, risk: number, k: number, budget: number): number {
+function minimaxBound(optionSets: Model[][], x: State, risk: number, k: number, budget: number): number {
   if (!Number.isFinite(budget)) return Infinity;
   const S = x.P.length, order = Array.from({ length: S }, (_, s) => s).sort((u, v) => x.P[u] - x.P[v]);
   const omega = new Float64Array(S).fill((1 - risk) / S);
   for (let j = 0; j < k; j++) omega[order[j]] += risk / k;
-  const parts = models.map(m => {
+  const buildPart = (m: Model) => {
     if (m.cap <= 0) return null;
     const Qc = Math.min(m.capPrepaid, m.cap), Ac = Math.min(m.capAllot, m.cap), C = m.cap;
     const prepaidFirst = Ac === 0 || m.salvage <= m.allotBuy * (1 - m.deposit);
     const wTotal = new Float64Array(S), wFirst = new Float64Array(S);
     for (let s = 0; s < S; s++) {
-      const p = m.price * m.priceMultiplier[s], vq = Math.max(0, p - m.salvage), va = Ac > 0 ? Math.max(0, p - m.allotBuy * (1 - m.deposit)) : 0;
+      const p = m.price * m.priceMultiplier[s] + m.serviceValue, vq = Math.max(0, p - m.salvage), va = Ac > 0 ? Math.max(0, p - m.allotBuy * (1 - m.deposit)) : 0;
       const hi = prepaidFirst ? vq : va, lo = Math.min(prepaidFirst ? va : vq, hi);
       wTotal[s] = omega[s] * lo; wFirst[s] = omega[s] * (hi - lo);
     }
@@ -422,44 +484,51 @@ function minimaxBound(models: Model[], x: State, risk: number, k: number, budget
     const step = new Float64Array(C);
     for (let t = 0; t < C; t++) step[t] = total[t + 1] - total[t];
     return { m, Qc, Ac, C, prepaidFirst, total, first, step };
-  });
+  };
+  type Part = NonNullable<ReturnType<typeof buildPart>>;
+  // Every product chooses its best (price, pre-paid, allotment) for each budget multiplier, so the bound covers joint pricing.
+  const products = optionSets.map(options => options.map(buildPart).filter((part): part is Part => part !== null));
   const firstAtOrBelow = (step: Float64Array, kappa: number) => { let lo = 0, hi = step.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (step[mid] <= kappa) hi = mid; else lo = mid + 1; } return lo; };
+  const bestFor = (part: Part, lambda: number) => {
+    const { m, Qc, Ac, C, prepaidFirst, total, first, step } = part;
+    const unitDeposit = m.deposit * m.allotBuy;
+    // (0, 0) is always feasible with value 0; every other choice pays the fee and respects the minimum order.
+    let best = 0, bestCost = 0;
+    const consider = (q: number, a: number) => {
+      if (q + a <= 0 || q + a > C || q > Qc || a > Ac || (q > 0 && q < m.minimum)) return;
+      const cost = q * m.buy + a * unitDeposit + m.fee;
+      const v = total[q + a] + first[prepaidFirst ? q : a] + (m.salvage - m.buy) * q - unitDeposit * a - m.fee - lambda * cost;
+      if (v > best) { best = v; bestCost = cost; }
+    };
+    if (prepaidFirst) {
+      const tStar = firstAtOrBelow(step, unitDeposit * (1 + lambda));
+      for (let q = 0; q <= Qc; q++) {
+        if (q > 0 && q < m.minimum) continue;
+        const a = Math.max(0, Math.min(tStar - q, Ac, C - q));
+        consider(q, q === 0 ? Math.max(1, a) : a);
+      }
+    } else {
+      const tStar = firstAtOrBelow(step, (m.buy - m.salvage) + lambda * m.buy);
+      for (let a = 0; a <= Ac; a++) {
+        const q = Math.max(0, Math.min(tStar - a, Qc, C - a));
+        consider(q > 0 && q < m.minimum ? 0 : q, a);
+        if (q > 0 && q < m.minimum) consider(m.minimum, a);
+        if (a === 0) consider(Math.max(m.minimum, q, 1), 0);
+      }
+    }
+    return { best, bestCost };
+  };
   const solve = (lambda: number) => {
     let value = lambda * budget, used = 0;
-    for (const part of parts) {
-      if (!part) continue;
-      const { m, Qc, Ac, C, prepaidFirst, total, first, step } = part;
-      const unitDeposit = m.deposit * m.allotBuy;
-      // (0, 0) is always feasible with value 0; every other choice pays the fee and respects the minimum order.
+    for (const parts of products) {
       let best = 0, bestCost = 0;
-      const consider = (q: number, a: number) => {
-        if (q + a <= 0 || q + a > C || q > Qc || a > Ac || (q > 0 && q < m.minimum)) return;
-        const cost = q * m.buy + a * unitDeposit + m.fee;
-        const v = total[q + a] + first[prepaidFirst ? q : a] + (m.salvage - m.buy) * q - unitDeposit * a - m.fee - lambda * cost;
-        if (v > best) { best = v; bestCost = cost; }
-      };
-      if (prepaidFirst) {
-        const tStar = firstAtOrBelow(step, unitDeposit * (1 + lambda));
-        for (let q = 0; q <= Qc; q++) {
-          if (q > 0 && q < m.minimum) continue;
-          const a = Math.max(0, Math.min(tStar - q, Ac, C - q));
-          consider(q, q === 0 ? Math.max(1, a) : a);
-        }
-      } else {
-        const tStar = firstAtOrBelow(step, (m.buy - m.salvage) + lambda * m.buy);
-        for (let a = 0; a <= Ac; a++) {
-          const q = Math.max(0, Math.min(tStar - a, Qc, C - a));
-          consider(q > 0 && q < m.minimum ? 0 : q, a);
-          if (q > 0 && q < m.minimum) consider(m.minimum, a);
-          if (a === 0) consider(Math.max(m.minimum, q, 1), 0);
-        }
-      }
+      for (const part of parts) { const r = bestFor(part, lambda); if (r.best > best) { best = r.best; bestCost = r.bestCost; } }
       value += best; used += bestCost;
     }
     return { value, used };
   };
   let lo = 0, hi = 0;
-  for (const part of parts) if (part) hi = Math.max(hi, (part.m.price * 2) / Math.max(1e-9, Math.min(part.m.buy, part.m.deposit * part.m.allotBuy || part.m.buy)));
+  for (const parts of products) for (const part of parts) hi = Math.max(hi, ((part.m.price + part.m.serviceValue) * 2) / Math.max(1e-9, Math.min(part.m.buy, part.m.deposit * part.m.allotBuy || part.m.buy)));
   let bound = solve(0).value;
   for (let it = 0; it < 70 && hi > 0; it++) {
     const lambda = (lo + hi) / 2, d = solve(lambda);
@@ -467,6 +536,98 @@ function minimaxBound(models: Model[], x: State, risk: number, k: number, budget
     if (d.used > budget) lo = lambda; else hi = lambda;
   }
   return Math.min(bound, solve(hi).value);
+}
+
+/**
+ * Joint pricing: coordinate moves that switch one product to another candidate price, re-optimise its
+ * quantities and top up the budget. Only improvements are accepted; the bound covers all price options.
+ */
+function pricePass(state: State, models: Model[], optionModels: Model[][], budget: number, risk: number, k: number, rounds: number): { state: State; models: Model[] } {
+  let current = state, currentModels = models;
+  for (let round = 0; round < rounds; round++) {
+    let changed = false;
+    for (let i = 0; i < currentModels.length; i++) {
+      if (optionModels[i].length < 2 || currentModels[i].cap <= 0) continue;
+      for (const option of optionModels[i]) {
+        if (option.price === currentModels[i].price) continue;
+        const trialModels = currentModels.slice();
+        trialModels[i] = option;
+        const allocator = new Allocator(trialModels, budget, risk, k), trial = cloneState(current);
+        allocator.rebase(trial, i);
+        allocator.scan(trial, i);
+        allocator.fill(trial, 1);
+        if (allocator.seedPair(trial)) allocator.light(trial);
+        if (trial.objective > current.objective + 1e-7 * Math.max(1, Math.abs(current.objective))) { current = trial; currentModels = trialModels; changed = true; }
+      }
+    }
+    if (!changed) break;
+  }
+  return { state: current, models: currentModels };
+}
+
+/** In-sample expected share of modelled demand served (existing stock first, then new units). */
+function servedShareIn(models: Model[], x: State): number {
+  let served = 0, gross = 0;
+  models.forEach((m, i) => {
+    for (let s = 0; s < m.gross.length; s++) {
+      const [xq, xa] = sales(m, x.q[i], x.a[i], s);
+      served += Math.min(m.gross[s], m.stock) + xq + xa; gross += m.gross[s];
+    }
+  });
+  return gross > 0 ? served / gross : 0;
+}
+
+type Solved = { state: State; models: Model[]; optionModels: Model[][]; pricesFixed: boolean };
+
+/**
+ * One optimisation at service value μ. `thorough` adds the certified escalation used for the final plan.
+ * `fixedPrices` holds selling prices (the availability search keeps the no-target prices, so a target
+ * is met by buying more cover for the same demand, not by discounting to create extra demand).
+ */
+function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State): Solved {
+  const initial = fixedPrices ?? items.map((item, i) => choosePrice(item, i, set, risk, k, asOf, budget, mu));
+  const pricesFixed = !jointPricing || fixedPrices !== undefined;
+  const optionModels = items.map((item, i) => (pricesFixed ? [initial[i]] : candidatePrices(item)).map(price => buildModel(item, i, set, price, asOf, mu)));
+  let models = items.map((item, i) => optionModels[i].find(m => m.price === initial[i]) ?? buildModel(item, i, set, initial[i], asOf, mu));
+  const maxCap = Math.max(1, ...models.map(m => m.cap));
+  const startStep = Math.max(1, Math.floor(maxCap / 16));
+  // A plan within 0.5% of the proven bound is accepted; the residual is mostly the budget relaxation.
+  const tolerance = (x: State) => 5e-3 * Math.max(1, Math.abs(x.objective));
+  const certified = (x: State) => minimaxBound(optionModels, x, risk, k, budget) - x.objective <= tolerance(x);
+  let allocator = new Allocator(models, budget, risk, k);
+  let state = allocator.empty();
+  // Warm start (availability search): reuse the previous plan's units; capital does not depend on μ, so it stays feasible.
+  if (warm) for (let i = 0; i < models.length; i++) if (warm.q[i] + warm.a[i] > 0) allocator.set(state, i, warm.q[i], warm.a[i]);
+  allocator.fill(state, startStep);
+  allocator.light(state);
+  ({ state, models } = pricePass(state, models, optionModels, budget, risk, k, thorough ? 3 : 1));
+  // Escalate the search only while the certified gap is still open.
+  if (thorough && !certified(state)) {
+    state = new Allocator(models, budget, risk, k).improve(state, maxCap);
+    ({ state, models } = pricePass(state, models, optionModels, budget, risk, k, 2));
+    if (!certified(state) && models.some(m => m.capAllot > 0 || m.minimum > 1 || m.fee > 0)) {
+      // Second start: fill pre-paid first, then allotments. Keeps minimum-order jumps reachable.
+      allocator = new Allocator(models, budget, risk, k);
+      let alt = allocator.empty(), altModels = models;
+      allocator.fill(alt, startStep, false);
+      allocator.fill(alt, startStep);
+      allocator.light(alt);
+      if (!certified(alt)) alt = allocator.improve(alt, maxCap);
+      ({ state: alt, models: altModels } = pricePass(alt, altModels, optionModels, budget, risk, k, 2));
+      if (alt.objective > state.objective) { state = alt; models = altModels; }
+    }
+  }
+  // Never return an over-budget plan, even by floating-point round-off.
+  allocator = new Allocator(models, budget, risk, k);
+  let guard = 0;
+  while (models.reduce((sum, m, i) => sum + capital(m, state.q[i], state.a[i]), 0) > budget && guard++ < 100000) {
+    let i = models.length - 1;
+    while (i >= 0 && state.q[i] + state.a[i] === 0) i--;
+    if (i < 0) break;
+    if (state.a[i] > 0) allocator.set(state, i, state.q[i], state.a[i] - 1);
+    else allocator.set(state, i, state.q[i] - 1 < models[i].minimum ? 0 : state.q[i] - 1, state.a[i]);
+  }
+  return { state, models, optionModels, pricesFixed };
 }
 
 type Evaluated = { rows: PlanRow[]; metrics: RiskMetrics; servedShareBefore: number; histogram: RiskSummary['histogram']; P: Float64Array };
@@ -547,20 +708,26 @@ function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set
   return { rows, metrics, servedShareBefore: grossTotal > 0 ? stockServed / grossTotal : 0, histogram, P };
 }
 
-function settings(options: PlanOptions) {
+/**
+ * Options of the risk engine. `scenarioOverrides` changes the simulated world (planning and evaluation
+ * scenarios alike); the model-risk check uses it to score fixed decisions in worlds the plan did not assume.
+ */
+export type RiskPlanOptions = PlanOptions & { legacyRows?: PlanRow[]; scenarioOverrides?: Partial<ScenarioAssumptions> };
+
+function settings(options: RiskPlanOptions) {
   const asOf = options.asOf || new Date().toISOString().slice(0, 10);
   const scenarioCount = options.scenarioCount ?? RISK_ENGINE_DEFAULTS.scenarioCount;
   const evaluationCount = options.evaluationCount ?? RISK_ENGINE_DEFAULTS.evaluationCount;
   const seed = options.seed ?? RISK_ENGINE_DEFAULTS.seed;
-  return { asOf, scenarioCount, evaluationCount, seed, alpha: RISK_ENGINE_DEFAULTS.alpha };
+  return { asOf, scenarioCount, evaluationCount, seed, alpha: RISK_ENGINE_DEFAULTS.alpha, overrides: options.scenarioOverrides ?? {} };
 }
 
-/** Scores fixed decisions (e.g. a committed plan under stress) on the out-of-sample scenario set. */
-export function evaluateDecisions(items: Opportunity[], decisions: Decision[], risk: number, options: PlanOptions = {}) {
+/** Scores fixed decisions (e.g. a committed plan under stress, or in a mismatched world) on the out-of-sample scenario set. */
+export function evaluateDecisions(items: Opportunity[], decisions: Decision[], risk: number, options: RiskPlanOptions = {}) {
   if (items.length !== decisions.length) throw new Error('Each item needs one decision.');
   const o = settings(options);
   if (!items.length) return { rows: [] as PlanRow[], metrics: emptyMetrics() };
-  const set = buildScenarioSet(items, o.evaluationCount, o.seed + 7919);
+  const set = buildScenarioSet(items, o.evaluationCount, o.seed + 7919, o.overrides);
   const result = evaluate(items, decisions, clamp(risk, 0, 1), set, o.asOf, o.alpha, true);
   return { rows: result.rows, metrics: result.metrics };
 }
@@ -569,51 +736,69 @@ function emptyMetrics(): RiskMetrics {
   return { spend: 0, expectedProfit: 0, cvar: 0, valueAtRisk: 0, pLoss: 0, p05: 0, p95: 0, servedShare: 0, expectedUnsold: 0 };
 }
 
-export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk: number, options: PlanOptions & { legacyRows?: PlanRow[] } = {}): RiskOptimizedPlan {
+export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk: number, options: RiskPlanOptions = {}): RiskOptimizedPlan {
   const o = settings(options);
   const r = clamp(risk, 0, 1), B = Math.max(0, Number.isFinite(budget) ? budget : 0);
+  const target = clamp(options.serviceTarget ?? 0, 0, 0.99), jointPricing = options.jointPricing !== false;
+  const pricing: RiskOptimizedPlan['pricing'] = jointPricing ? 'joint' : 'fixed';
   const summaryBase = { engine: RISK_ENGINE_VERSION, alpha: o.alpha, scenarioCount: o.scenarioCount, evaluationCount: o.evaluationCount, seed: o.seed };
+  let service: ServiceSummary = { target, status: target > 0 ? 'not-binding' : 'off', servedShare: 0, servedShareWithoutTarget: 0, serviceValue: 0, expectedProfitCost: 0, cvarCost: 0 };
   if (!items.length) {
-    return { rows: [], objective: 0, upperBound: 0, gap: 0, baselineObjective: 0, algorithm: 'risk-cvar-local-search', bucketCount: 0, engine: RISK_ENGINE_VERSION,
+    return { rows: [], objective: 0, upperBound: 0, gap: 0, baselineObjective: 0, algorithm: 'risk-cvar-local-search', bucketCount: 0, engine: RISK_ENGINE_VERSION, pricing, service,
       risk: { ...summaryBase, ...emptyMetrics(), servedShareBefore: 0, units: 0, prepaidUnits: 0, allotmentUnits: 0, histogram: [] } };
   }
-  const optSet = buildScenarioSet(items, o.scenarioCount, o.seed);
-  const evalSet = buildScenarioSet(items, o.evaluationCount, o.seed + 7919);
+  const optSet = buildScenarioSet(items, o.scenarioCount, o.seed, o.overrides);
+  const evalSet = buildScenarioSet(items, o.evaluationCount, o.seed + 7919, o.overrides);
   const k = Math.max(1, Math.ceil(o.alpha * o.scenarioCount));
-  const prices = items.map((item, i) => choosePrice(item, i, optSet, r, k, o.asOf, B));
-  const models = items.map((item, i) => buildModel(item, i, optSet, prices[i], o.asOf));
-  const allocator = new Allocator(models, B, r, k);
-  const maxCap = Math.max(1, ...models.map(m => m.cap));
-  const startStep = Math.max(1, Math.floor(maxCap / 16));
-  // A plan within 0.5% of the proven bound is accepted; the residual is mostly the budget relaxation.
-  const tolerance = (x: State) => 5e-3 * Math.max(1, Math.abs(x.objective));
-  const certified = (x: State) => minimaxBound(models, x, r, k, B) - x.objective <= tolerance(x);
-  let state = allocator.empty();
-  allocator.fill(state, startStep);
-  allocator.light(state);
-  // Escalate the search only while the certified gap is still open.
-  if (!certified(state)) state = allocator.improve(state, maxCap);
-  if (!certified(state) && models.some(m => m.capAllot > 0 || m.minimum > 1 || m.fee > 0)) {
-    // Second start: fill pre-paid first, then allotments. Keeps minimum-order jumps reachable.
-    let alt = allocator.empty();
-    allocator.fill(alt, startStep, false);
-    allocator.fill(alt, startStep);
-    allocator.light(alt);
-    if (!certified(alt)) alt = allocator.improve(alt, maxCap);
-    if (alt.objective > state.objective) state = alt;
+  const base = solvePortfolio(items, optSet, B, r, k, o.asOf, 0, jointPricing, true);
+  let chosen = base, maxAvailability: Decision[] | null = null;
+  if (target > 0 && servedShareIn(base.models, base.state) < target) {
+    // Smallest service value μ whose optimal plan serves the target share at the same prices: double, then bisect.
+    const prices = base.models.map(m => m.price);
+    // Doubling builds each plan from scratch (μ jumps a lot, so budget must move between products);
+    // bisection and the final certified solve warm-start from the feasible end of the bracket.
+    const solve = (mu: number, thorough: boolean, warm?: State) => solvePortfolio(items, optSet, B, r, k, o.asOf, mu, false, thorough, prices, warm);
+    const meanPrice = Math.max(1, prices.reduce((sum, price) => sum + price, 0) / prices.length);
+    let lo = 0, hi = 0.02 * meanPrice, reached = false, last: Solved = base, previousShare = servedShareIn(base.models, base.state);
+    for (let t = 0; t < 9 && !reached; t++) {
+      last = solve(hi, false);
+      const share = servedShareIn(last.models, last.state);
+      if (share >= target) reached = true;
+      else {
+        lo = hi; hi *= 2;
+        // Saturated: a higher service value no longer buys availability (budget or supplier capacity binds).
+        if (t >= 3 && share - previousShare < 1e-3) break;
+        previousShare = share;
+      }
+    }
+    if (!reached) {
+      // Keep the no-target plan and report roughly the most this budget and supplier capacity can serve.
+      maxAvailability = items.map((_, i) => ({ prepaid: last.state.q[i], allotment: last.state.a[i], price: prices[i] }));
+      service = { ...service, status: 'unreachable' };
+    } else {
+      let feasible = last.state;
+      for (let t = 0; t < 5; t++) {
+        const mid = (lo + hi) / 2, trial = solve(mid, false, feasible);
+        if (servedShareIn(trial.models, trial.state) >= target) { hi = mid; feasible = trial.state; } else lo = mid;
+      }
+      let final = solve(hi, true, feasible);
+      for (let t = 0; t < 3 && servedShareIn(final.models, final.state) < target; t++) { hi *= 1.25; final = solve(hi, true, final.state); }
+      if (servedShareIn(final.models, final.state) >= target) { chosen = final; service = { ...service, status: 'met', serviceValue: hi }; }
+      else { maxAvailability = items.map((_, i) => ({ prepaid: final.state.q[i], allotment: final.state.a[i], price: prices[i] })); service = { ...service, status: 'unreachable' }; }
+    }
   }
-  // Never return an over-budget plan, even by floating-point round-off.
-  let guard = 0;
-  while (models.reduce((sum, m, i) => sum + capital(m, state.q[i], state.a[i]), 0) > B && guard++ < 100000) {
-    let i = models.length - 1;
-    while (i >= 0 && state.q[i] + state.a[i] === 0) i--;
-    if (i < 0) break;
-    if (state.a[i] > 0) allocator.set(state, i, state.q[i], state.a[i] - 1);
-    else allocator.set(state, i, state.q[i] - 1 < models[i].minimum ? 0 : state.q[i] - 1, state.a[i]);
-  }
-  const bound = Math.max(state.objective, Math.min(upperBound(models, state, r, k, B), minimaxBound(models, state, r, k, B) + Math.max(1e-7, Math.abs(state.objective) * 1e-12)));
-  const decisions: Decision[] = items.map((_, i) => ({ prepaid: state.q[i], allotment: state.a[i], price: prices[i] }));
+  const { state, models, optionModels } = chosen;
+  // Frank–Wolfe is only valid for fixed prices; the minimax bound covers every candidate price.
+  const fixedPriceBound = chosen.pricesFixed ? upperBound(models, state, r, k, B) : Infinity;
+  const bound = Math.max(state.objective, Math.min(fixedPriceBound, minimaxBound(optionModels, state, r, k, B) + Math.max(1e-7, Math.abs(state.objective) * 1e-12)));
+  const decisions: Decision[] = items.map((_, i) => ({ prepaid: state.q[i], allotment: state.a[i], price: models[i].price }));
   const result = evaluate(items, decisions, r, evalSet, o.asOf, o.alpha, true);
+  if (chosen !== base) {
+    const baseDecisions = items.map((_, i) => ({ prepaid: base.state.q[i], allotment: base.state.a[i], price: base.models[i].price }));
+    const baseMetrics = evaluate(items, baseDecisions, r, evalSet, o.asOf, o.alpha, false).metrics;
+    service = { ...service, servedShare: result.metrics.servedShare, servedShareWithoutTarget: baseMetrics.servedShare, expectedProfitCost: baseMetrics.expectedProfit - result.metrics.expectedProfit, cvarCost: baseMetrics.cvar - result.metrics.cvar };
+  } else service = { ...service, servedShare: result.metrics.servedShare, servedShareWithoutTarget: result.metrics.servedShare };
+  if (maxAvailability) service = { ...service, maxServedShare: evaluate(items, maxAvailability, r, evalSet, o.asOf, o.alpha, false).metrics.servedShare };
 
   let baselineObjective = 0, legacy: RiskMetrics | undefined;
   if (options.legacyRows && options.legacyRows.length === items.length) {
@@ -625,10 +810,11 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
     baselineObjective = legacyState.objective;
     legacy = evaluate(items, legacyDecisions, r, evalSet, o.asOf, o.alpha, false).metrics;
   }
-  const prepaidUnits = decisions.reduce((s, d) => s + d.prepaid, 0), allotmentUnits = decisions.reduce((s, d) => s + d.allotment, 0);
+  const prepaidUnits = decisions.reduce((sum, d) => sum + d.prepaid, 0), allotmentUnits = decisions.reduce((sum, d) => sum + d.allotment, 0);
+  const rows = target > 0 ? result.rows.map(row => ({ ...row, serviceTarget: target })) : result.rows;
   return {
-    rows: result.rows, objective: state.objective, upperBound: bound, gap: Math.max(0, bound - state.objective), baselineObjective,
-    algorithm: 'risk-cvar-local-search', bucketCount: 0, engine: RISK_ENGINE_VERSION,
+    rows, objective: state.objective, upperBound: bound, gap: Math.max(0, bound - state.objective), baselineObjective,
+    algorithm: 'risk-cvar-local-search', bucketCount: 0, engine: RISK_ENGINE_VERSION, pricing, service,
     risk: { ...summaryBase, ...result.metrics, servedShareBefore: result.servedShareBefore, units: prepaidUnits + allotmentUnits, prepaidUnits, allotmentUnits, histogram: result.histogram, legacy },
   };
 }
