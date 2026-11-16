@@ -2,7 +2,6 @@ import Link from "next/link";
 import prisma from "@/lib/db";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -18,7 +17,6 @@ import {
   ExternalLink,
   AlertTriangle,
   TrendingUp,
-  Sparkles,
   ArrowRight,
   ArrowLeft,
   Clock,
@@ -26,6 +24,7 @@ import {
 } from "lucide-react";
 import { DiscountRulesClient } from "@/components/dashboard/discount-rules-client";
 import { EventEditForm } from "@/components/dashboard/event-edit-form";
+import { VenueMapPreview } from "@/components/dashboard/venue-map-preview";
 
 export const dynamic = "force-dynamic";
 
@@ -90,28 +89,38 @@ export default async function EventOverviewPage({
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-surface/60 px-4 py-3">
-          <EventEditForm
-            eventId={eventId}
-            initialData={{
-              name: event.name,
-              venue: event.venue,
-              location: event.location,
-              checkIn: event.checkIn.toISOString(),
-              checkOut: event.checkOut.toISOString(),
-              type: event.type,
-              description: event.description || '',
-              primaryColor: event.primaryColor,
-              secondaryColor: event.secondaryColor,
-              accentColor: event.accentColor,
-            }}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-surface/60 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <EventEditForm
+              eventId={eventId}
+              initialData={{
+                name: event.name,
+                venue: event.venue,
+                location: event.location,
+                checkIn: event.checkIn.toISOString(),
+                checkOut: event.checkOut.toISOString(),
+                type: event.type,
+                description: event.description || '',
+                primaryColor: event.primaryColor,
+                secondaryColor: event.secondaryColor,
+                accentColor: event.accentColor,
+              }}
+            />
+            <EventOverviewActions slug={event.slug} eventId={eventId} currentStatus={event.status} eventName={event.name} />
+            <Link href={`/event/${event.slug}`} target="_blank">
+              <Button size="sm" className="gap-1.5">
+                <ExternalLink className="h-3.5 w-3.5" /> Guest microsite
+              </Button>
+            </Link>
+          </div>
+
+          {/* Interactive OpenStreetMap preview card (180px x 64px) */}
+          <VenueMapPreview
+            venue={event.venue}
+            location={event.location}
+            initialLat={(event as unknown as { latitude?: number | null }).latitude ?? null}
+            initialLng={(event as unknown as { longitude?: number | null }).longitude ?? null}
           />
-          <EventOverviewActions slug={event.slug} eventId={eventId} currentStatus={event.status} eventName={event.name} />
-          <Link href={`/event/${event.slug}`} target="_blank">
-            <Button size="sm" className="gap-1.5">
-              <ExternalLink className="h-3.5 w-3.5" /> Guest microsite
-            </Button>
-          </Link>
         </div>
       </Card>
 
