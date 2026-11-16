@@ -365,8 +365,7 @@ function computeLearned(item: Opportunity, history: DemandHistoryPoint[]): Learn
   // Without a learned signal effect, the typed external signal still applies as entered (it is not part of the validation).
   const forecast = passed ? learnedForecast * (final.beta === null ? Math.max(0, item.signal || 1) : 1) : naiveForecast;
   const signalEffect = final.beta !== null ? Math.pow(typedSignal, final.beta) : Math.max(0, item.signal || 1);
-  // Interval: forecast ÷ (1 + relative error) — a forecast that ran 10% high means actual = forecast / 1.1.
-  const lower80 = rel.length ? 1 / (1 + quantile(rel, 0.9)) : 1, upper80 = rel.length ? 1 / (1 + quantile(rel, 0.1)) : 1;
+  const { lower80, upper80 } = band80(rel);
   return {
     gate: passed ? 'passed' : 'fallback', forecast: Math.max(0, forecast), level: Math.exp(final.anchor),
     reason: !folds ? 'Not enough history for a rolling backtest.' : passed
@@ -377,9 +376,82 @@ function computeLearned(item: Opportunity, history: DemandHistoryPoint[]): Learn
     growth: final.growth, growthFactor: Math.pow(final.growth, horizon / 12),
     signalBeta: final.beta, signalEffect, priceElasticity: final.elasticity, priceElasticitySe: final.elasticitySe,
     volatility: Math.min(0.8, Math.max(0.05, sd)), naiveForecast,
-    lower80: Math.min(1, lower80), upper80: Math.max(1, upper80),
+    lower80, upper80,
     seasonal: Array.from({ length: 12 }, (_, m) => final.S[m]),
   };
+}
+
+/**
+ * 80% band as multipliers of the point forecast, from rolling relative errors (forecast / actual − 1): a forecast that
+ * ran 10% high means actual = forecast / 1.1. Empirical 10th and 90th percentiles; always contains the forecast.
+ */
+export function band80(rel: number[]): { lower80: number; upper80: number } {
+  if (!rel.length) return { lower80: 1, upper80: 1 };
+  return { lower80: Math.min(1, 1 / (1 + quantile(rel, 0.9))), upper80: Math.max(1, 1 / (1 + quantile(rel, 0.1))) };
+}
+
+/**
+ * Out-of-sample check of the 80% band (sequential split-conformal): for each of the latest `targets` forecasts, the band
+ * is built only from errors of earlier forecasts whose outcome was already known at its origin (latest `calibration`).
+ * Coverage near 0.8 means "80%" is honest.
+ */
+export function bandCoverage(history: DemandHistoryPoint[], horizon: number, kind: Opportunity['kind'] = 'Hotel', targets = 24, calibration = 36) {
+  const rf = rollingForecasts(history, horizon, kind).filter(x => x.scored && x.forecast !== null && x.actual > 0);
+  const index = (m: string) => Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1;
+  let n = 0, covered = 0, width = 0;
+  for (let k = Math.max(0, rf.length - targets); k < rf.length; k++) {
+    const x = rf[k], known = rf.filter(y => index(y.month) <= index(x.origin)).slice(-calibration);
+    if (known.length < 12) continue;
+    const b = band80(known.map(y => y.forecast! / y.actual - 1));
+    n++; width += b.upper80 - b.lower80;
+    if (x.actual >= x.forecast! * b.lower80 && x.actual <= x.forecast! * b.upper80) covered++;
+  }
+  return { n, covered, coverage: n ? covered / n : NaN, meanWidth: n ? width / n : NaN };
+}
+
+/** One rolling-origin forecast of the learned model and of seasonal-naive for a target month. */
+export type RollingForecast = {
+  month: string; origin: string;
+  /** Learned-model forecast fitted only on months up to `origin`; null when the window cannot be fitted. */
+  forecast: number | null;
+  /** Same month in the latest usable year at or before `origin`. */
+  naive: number | null;
+  actual: number;
+  /** False when the target month is flagged `exclude` (do not score it). */
+  scored: boolean;
+};
+
+const monthName = (i: number) => `${Math.floor(i / 12).toString().padStart(4, '0')}-${String((i % 12) + 1).padStart(2, '0')}`;
+
+/**
+ * Learned-model forecasts for every target month of a history, each refitted on data up to `horizon` months before the
+ * target: the same fit, projection and seasonal-naive benchmark as the planner's rolling backtest. Used by the research
+ * studies (Singapore room nights, DGCA routes) so they test exactly the model the planner uses. No price or signal
+ * effect unless the history carries those columns.
+ */
+export function rollingForecasts(history: DemandHistoryPoint[], horizon: number, kind: Opportunity['kind'] = 'Hotel'): RollingForecast[] {
+  const series = seriesOf(history, 0);
+  if (!series || !Number.isInteger(horizon) || horizon < 1) return [];
+  const prior = PRIOR_PRICE_ELASTICITY[kind] ?? PRIOR_PRICE_ELASTICITY.Hotel, out: RollingForecast[] = [];
+  for (let t = MIN_MONTHS - 1 + horizon; t < series.U.length; t++) {
+    const origin = t - horizon, f = fit(series, origin, prior), p = series.price[t], g = series.signal[t];
+    const forecast = f.ok ? project(series, f, origin, t, f.priceMean && p ? p / f.priceMean : null, f.signalMean && g ? g / f.signalMean : null) : null;
+    out.push({ month: monthName(series.start + t), origin: monthName(series.start + origin), forecast, naive: seasonalNaive(series, origin, t), actual: series.U[t], scored: series.use[t] });
+  }
+  return out;
+}
+
+/**
+ * Learned-model forecast `horizon` months after `origin`, using only history up to `origin` (null when `origin` is not
+ * the last month of a consecutive run or the window cannot be fitted).
+ */
+export function forecastFrom(history: DemandHistoryPoint[], origin: string, horizon: number, kind: Opportunity['kind'] = 'Hotel'): number | null {
+  const series = seriesOf(history.filter(h => h && typeof h.month === 'string' && h.month <= origin), 0);
+  if (!series || !Number.isInteger(horizon) || horizon < 1) return null;
+  const last = series.U.length - 1;
+  if (monthName(series.start + last) !== origin) return null;
+  const f = fit(series, last, PRIOR_PRICE_ELASTICITY[kind] ?? PRIOR_PRICE_ELASTICITY.Hotel);
+  return f.ok ? project(series, f, last, last + horizon, null, null) : null;
 }
 
 /** Price elasticity the planner uses: learned (posterior) → typed → prior. */

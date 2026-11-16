@@ -62,6 +62,20 @@ The model is refitted at every rolling origin using only data available then. It
 | ₹40 L | Spends ₹39.98 L, all at market prices: 465 prepaid and 188 allotment units, 81% of demand served, expected profit ₹13.3 L, CVaR10 ₹7.1 L, P(loss) 0.6%. |
 | ₹60 L | Stops at about ₹40.7 L. Beyond that, extra units lower the risk-adjusted objective, so the rest of the budget is left unspent. |
 
+## Is the "80%" demand range honest?
+
+The planner's 80% range for each product is built from the 10th and 90th percentiles of its rolling forecast errors (`band80` in `learned-demand.ts`). `tests/forecast-calibration.test.ts` checks it out of sample (sequential split-conformal):
+- For each of the latest 24 forecasts, the range is built only from errors already known at that forecast's origin (latest 36).
+- The test then records whether the actual landed inside.
+- It runs on 15 real series: this portfolio, Singapore room nights (3 months ahead) and the six DGCA study routes (2 months ahead).
+
+| Result | Value |
+|---|---|
+| Pooled coverage | **293 of 360 forecasts = 81.4%** (target 80%) |
+| Typical range width | ±9–23% of the forecast |
+| Using the textbook conformal order statistic instead | over-covers (88%), so the interpolated percentile is kept |
+| Exception | Srinagar (11/24): air arrivals fell from 218k in May 2024 to 79k in May 2025 and stayed below 2024 levels into 2026. A range built on past errors cannot anticipate a shock like that; for Srinagar the planner falls back to "same month last year", which follows the new level. |
+
 ## Limits
 
 - **Proxies:** air passengers and city-wide room nights stand in for one product's bookings. With TBO booking history per HotelCode or route, the same code learns from the product itself (`historyScope: 'product'`) and uses its own error spread.

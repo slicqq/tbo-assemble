@@ -38,3 +38,43 @@ Results in gross booking records, lower MAE is better:
 | Sep 2016 | Resort | 35.13 | 35.13 | 0/30 days | 50.0% |
 
 These overlapping forecast dates share many bookings, so sample sizes are not independent events. The adaptive approach did not improve on the baseline in these tests; its confidence intervals did not meet their nominal coverage in most periods. It remains excluded from procurement allocation.
+
+## Update (Nov 2026): smoothed weekly level as the default forecast
+
+**What failed.** "Last 7 days" is a noisy estimate of the booking rate, and the 21-day ridge model rarely beat it by the required 20%.
+
+**What changed.** The fallback is now a smoothed weekly level: ½ × last week's bookings + ½ × the weekly average of the three weeks before, for the same arrival window. That works out to weights of 2/3, 1/6 and 1/6 on the latest four weeks.
+- It is the simplest decaying-weight average, with no fitted parameters.
+- Candidates were compared on **April–June 2016 development data** (the 88 replay dates per hotel, MAE, lower is better):
+
+| Candidate | City | Resort |
+|---|---:|---:|
+| Last 7 days | 36.0 | 10.7 |
+| Weekly average of weeks 2–4 | 33.3 | 10.6 |
+| Mean of the latest four weeks | 30.2 | 9.5 |
+| **Smoothed level** | **29.7** | **9.3** |
+
+- It was fixed before July–September was scored.
+- The trained ridge model must now beat the smoothed level by 20% on the same 28 replay dates, and the interval radius is calibrated on the selected method's errors exactly as before. The "last 7 days" baseline stays the scoring reference.
+
+**Also tested and rejected.** A booking-pace model (same as-of date last year × this year's pace) could only be checked on June: 2015 data begins in July. It won on City in September (66.0) but lost badly elsewhere (Resort September 103.9), so it was not adopted.
+
+**Results** (gross booking records, adaptive vs last 7 days):
+
+| Period | Hotel | Adaptive MAE | Last-7-days MAE | Skill | Trained model selected | Nominal 80% range coverage |
+|---|---|---:|---:|---:|---:|---:|
+| Apr–Jun 2016 (development) | City | 29.7 | 36.0 | 17.3% | 0/88 | 89% |
+| Apr–Jun 2016 (development) | Resort | 9.3 | 10.7 | 13.5% | 0/88 | 77% |
+| Jul–Aug 2016 | City | 46.6 | 50.3 | 7.4% | 0/62 | 65% |
+| Jul–Aug 2016 | Resort | 8.2 | 8.3 | 0.6% | 0/62 | 90% |
+| **Sep 2016 (displayed)** | **City** | **76.4** | **100.3** | **23.8%** | 0/30 | 80% |
+| **Sep 2016 (displayed)** | **Resort** | **32.5** | **35.1** | **7.5%** | 0/30 | 50% |
+
+**How to read it.**
+- **Point forecast:** the smoothed level beats "last 7 days" in every period for both hotels.
+- **Ranges:**
+  - Coverage is near nominal for City in September.
+  - It falls to 50% for Resort in September: demand there more than doubled within weeks (the average next-week count rose from 33 in April–June to 85), faster than errors from the previous four weeks anticipate.
+  - Three variants changed nothing: relative errors, asymmetric signed-error quantiles, and a 56-day calibration window.
+  - The app labels this case "Beats baseline · range under-covers" instead of "passed".
+- **Allocation:** this study remains outside the procurement allocation. The planner's own forecasts come from the monthly learned model (`learned-demand.ts`), validated per product against "same month last year".

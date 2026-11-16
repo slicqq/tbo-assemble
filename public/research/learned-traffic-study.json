@@ -1,0 +1,1407 @@
+{
+ "schema": "learned-traffic-study-v1",
+ "baseStudy": {
+  "file": "public/research/statsforecast-study.json",
+  "snapshotSha256": "5e118f2b76ff029aa690a4bb3ccdc04452c99bf71055ad454265198bd3a97684",
+  "selectionWindow": "2024-01 to 2025-12",
+  "laterWindow": "2026-02 to 2026-09",
+  "horizonMonths": 2
+ },
+ "model": "src/lib/learned-demand.ts forecastFrom: Huber-weighted log-linear fit (month-of-year effects + trend) on the latest 48 usable months, median year-on-year growth, median-of-3 anchor; COVID, ambiguous, missing and imputed months excluded",
+ "rule": "Base study rule, unchanged: best model candidate if its selection MAE is more than 5% below the better baseline (last observed, same month last year), else that baseline. Selection 2024–25 only; scored Feb–Sep 2026.",
+ "methods": [
+  "last-observed",
+  "last-year",
+  "ses-optimized",
+  "seasonal-auto-ets",
+  "learned-seasonal"
+ ],
+ "routes": [
+  {
+   "origin": "BOM",
+   "destination": "DEL",
+   "baseSelectedPolicy": "last-observed",
+   "reproducedBasePolicy": "last-observed",
+   "selectedPolicy": "learned-seasonal",
+   "plannerPolicy": "learned-seasonal",
+   "minMaePolicy": "learned-seasonal",
+   "selection": {
+    "count": 20,
+    "mae": {
+     "last-observed": 17523.9,
+     "last-year": 21948.1,
+     "ses-optimized": 17465.1,
+     "seasonal-auto-ets": 16787.9,
+     "learned-seasonal": 13544.4
+    }
+   },
+   "later": {
+    "count": 7,
+    "mae": {
+     "last-observed": 25321.6,
+     "last-year": 12836.6,
+     "ses-optimized": 25192,
+     "seasonal-auto-ets": 25315.7,
+     "learned-seasonal": 8436.1
+    }
+   },
+   "rows": [
+    {
+     "part": "selection",
+     "month": "2024-01",
+     "cutoff": "2023-11",
+     "actual": 289788,
+     "learned": 286229.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-02",
+     "cutoff": "2023-12",
+     "actual": 293493,
+     "learned": 287174.4
+    },
+    {
+     "part": "selection",
+     "month": "2024-03",
+     "cutoff": "2024-01",
+     "actual": 288891,
+     "learned": 275167
+    },
+    {
+     "part": "selection",
+     "month": "2024-04",
+     "cutoff": "2024-02",
+     "actual": 302589,
+     "learned": 280477.3
+    },
+    {
+     "part": "selection",
+     "month": "2024-06",
+     "cutoff": "2024-04",
+     "actual": 262604,
+     "learned": 272085.3
+    },
+    {
+     "part": "selection",
+     "month": "2024-08",
+     "cutoff": "2024-06",
+     "actual": 290300,
+     "learned": 300312.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-09",
+     "cutoff": "2024-07",
+     "actual": 292814,
+     "learned": 279671.5
+    },
+    {
+     "part": "selection",
+     "month": "2024-10",
+     "cutoff": "2024-08",
+     "actual": 298125,
+     "learned": 299477.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-11",
+     "cutoff": "2024-09",
+     "actual": 283790,
+     "learned": 299558.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-12",
+     "cutoff": "2024-10",
+     "actual": 271126,
+     "learned": 312054.9
+    },
+    {
+     "part": "selection",
+     "month": "2025-01",
+     "cutoff": "2024-11",
+     "actual": 282359,
+     "learned": 305584.2
+    },
+    {
+     "part": "selection",
+     "month": "2025-02",
+     "cutoff": "2024-12",
+     "actual": 283669,
+     "learned": 294448.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-03",
+     "cutoff": "2025-01",
+     "actual": 285382,
+     "learned": 267382.4
+    },
+    {
+     "part": "selection",
+     "month": "2025-04",
+     "cutoff": "2025-02",
+     "actual": 283055,
+     "learned": 273553.9
+    },
+    {
+     "part": "selection",
+     "month": "2025-06",
+     "cutoff": "2025-04",
+     "actual": 241903,
+     "learned": 254797.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-07",
+     "cutoff": "2025-05",
+     "actual": 244021,
+     "learned": 249941.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-08",
+     "cutoff": "2025-06",
+     "actual": 251212,
+     "learned": 264567.9
+    },
+    {
+     "part": "selection",
+     "month": "2025-09",
+     "cutoff": "2025-07",
+     "actual": 254492,
+     "learned": 261475.6
+    },
+    {
+     "part": "selection",
+     "month": "2025-10",
+     "cutoff": "2025-08",
+     "actual": 295183,
+     "learned": 283280.6
+    },
+    {
+     "part": "selection",
+     "month": "2025-11",
+     "cutoff": "2025-09",
+     "actual": 294192,
+     "learned": 272264.4
+    },
+    {
+     "part": "later",
+     "month": "2026-03",
+     "cutoff": "2026-01",
+     "actual": 271372,
+     "learned": 281072.2
+    },
+    {
+     "part": "later",
+     "month": "2026-04",
+     "cutoff": "2026-02",
+     "actual": 272282,
+     "learned": 278768.6
+    },
+    {
+     "part": "later",
+     "month": "2026-05",
+     "cutoff": "2026-03",
+     "actual": 276140,
+     "learned": 270516.6
+    },
+    {
+     "part": "later",
+     "month": "2026-06",
+     "cutoff": "2026-04",
+     "actual": 218850,
+     "learned": 240277.3
+    },
+    {
+     "part": "later",
+     "month": "2026-07",
+     "cutoff": "2026-05",
+     "actual": 225172,
+     "learned": 230198.6
+    },
+    {
+     "part": "later",
+     "month": "2026-08",
+     "cutoff": "2026-06",
+     "actual": 247570,
+     "learned": 239062.8
+    },
+    {
+     "part": "later",
+     "month": "2026-09",
+     "cutoff": "2026-07",
+     "actual": 246253,
+     "learned": 248534.5
+    }
+   ]
+  },
+  {
+   "origin": "DEL",
+   "destination": "BOM",
+   "baseSelectedPolicy": "ses-optimized",
+   "reproducedBasePolicy": "ses-optimized",
+   "selectedPolicy": "learned-seasonal",
+   "plannerPolicy": "learned-seasonal",
+   "minMaePolicy": "learned-seasonal",
+   "selection": {
+    "count": 20,
+    "mae": {
+     "last-observed": 15980.5,
+     "last-year": 20325.6,
+     "ses-optimized": 15027.1,
+     "seasonal-auto-ets": 16290,
+     "learned-seasonal": 12238.4
+    }
+   },
+   "later": {
+    "count": 7,
+    "mae": {
+     "last-observed": 24152.7,
+     "last-year": 13532.6,
+     "ses-optimized": 18631.7,
+     "seasonal-auto-ets": 20330.2,
+     "learned-seasonal": 9964.3
+    }
+   },
+   "rows": [
+    {
+     "part": "selection",
+     "month": "2024-01",
+     "cutoff": "2023-11",
+     "actual": 284143,
+     "learned": 277610.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-02",
+     "cutoff": "2023-12",
+     "actual": 280016,
+     "learned": 276709.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-03",
+     "cutoff": "2024-01",
+     "actual": 290453,
+     "learned": 285182
+    },
+    {
+     "part": "selection",
+     "month": "2024-04",
+     "cutoff": "2024-02",
+     "actual": 276200,
+     "learned": 263089.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-06",
+     "cutoff": "2024-04",
+     "actual": 290790,
+     "learned": 290965.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-08",
+     "cutoff": "2024-06",
+     "actual": 290187,
+     "learned": 293572.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-09",
+     "cutoff": "2024-07",
+     "actual": 288534,
+     "learned": 284187.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-10",
+     "cutoff": "2024-08",
+     "actual": 261087,
+     "learned": 274528.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-11",
+     "cutoff": "2024-09",
+     "actual": 296267,
+     "learned": 298887
+    },
+    {
+     "part": "selection",
+     "month": "2024-12",
+     "cutoff": "2024-10",
+     "actual": 295226,
+     "learned": 332832.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-01",
+     "cutoff": "2024-11",
+     "actual": 279457,
+     "learned": 297664.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-02",
+     "cutoff": "2024-12",
+     "actual": 271320,
+     "learned": 290387.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-03",
+     "cutoff": "2025-01",
+     "actual": 290413,
+     "learned": 276875.3
+    },
+    {
+     "part": "selection",
+     "month": "2025-04",
+     "cutoff": "2025-02",
+     "actual": 269338,
+     "learned": 252418.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-06",
+     "cutoff": "2025-04",
+     "actual": 266944,
+     "learned": 284062.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-07",
+     "cutoff": "2025-05",
+     "actual": 249657,
+     "learned": 258617.5
+    },
+    {
+     "part": "selection",
+     "month": "2025-08",
+     "cutoff": "2025-06",
+     "actual": 256618,
+     "learned": 269841.6
+    },
+    {
+     "part": "selection",
+     "month": "2025-09",
+     "cutoff": "2025-07",
+     "actual": 248779,
+     "learned": 266291.5
+    },
+    {
+     "part": "selection",
+     "month": "2025-10",
+     "cutoff": "2025-08",
+     "actual": 253111,
+     "learned": 252472.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-11",
+     "cutoff": "2025-09",
+     "actual": 308118,
+     "learned": 278333.1
+    },
+    {
+     "part": "later",
+     "month": "2026-03",
+     "cutoff": "2026-01",
+     "actual": 271231,
+     "learned": 279735.8
+    },
+    {
+     "part": "later",
+     "month": "2026-04",
+     "cutoff": "2026-02",
+     "actual": 239956,
+     "learned": 260615.2
+    },
+    {
+     "part": "later",
+     "month": "2026-05",
+     "cutoff": "2026-03",
+     "actual": 287542,
+     "learned": 274722.5
+    },
+    {
+     "part": "later",
+     "month": "2026-06",
+     "cutoff": "2026-04",
+     "actual": 267073,
+     "learned": 258903.9
+    },
+    {
+     "part": "later",
+     "month": "2026-07",
+     "cutoff": "2026-05",
+     "actual": 233888,
+     "learned": 229348.4
+    },
+    {
+     "part": "later",
+     "month": "2026-08",
+     "cutoff": "2026-06",
+     "actual": 245164,
+     "learned": 259918.7
+    },
+    {
+     "part": "later",
+     "month": "2026-09",
+     "cutoff": "2026-07",
+     "actual": 253634,
+     "learned": 253937
+    }
+   ]
+  },
+  {
+   "origin": "DEL",
+   "destination": "PNQ",
+   "baseSelectedPolicy": "last-year",
+   "reproducedBasePolicy": "last-year",
+   "selectedPolicy": "last-year",
+   "plannerPolicy": "last-year",
+   "minMaePolicy": "seasonal-auto-ets",
+   "selection": {
+    "count": 21,
+    "mae": {
+     "last-observed": 8952,
+     "last-year": 6310.2,
+     "ses-optimized": 7228.7,
+     "seasonal-auto-ets": 6124.6,
+     "learned-seasonal": 6128.9
+    }
+   },
+   "later": {
+    "count": 8,
+    "mae": {
+     "last-observed": 7833.3,
+     "last-year": 5236.9,
+     "ses-optimized": 8150,
+     "seasonal-auto-ets": 7876.1,
+     "learned-seasonal": 6130.7
+    }
+   },
+   "rows": [
+    {
+     "part": "selection",
+     "month": "2024-01",
+     "cutoff": "2023-11",
+     "actual": 113725,
+     "learned": 129301.8
+    },
+    {
+     "part": "selection",
+     "month": "2024-02",
+     "cutoff": "2023-12",
+     "actual": 113664,
+     "learned": 117165.5
+    },
+    {
+     "part": "selection",
+     "month": "2024-03",
+     "cutoff": "2024-01",
+     "actual": 121645,
+     "learned": 114302.5
+    },
+    {
+     "part": "selection",
+     "month": "2024-04",
+     "cutoff": "2024-02",
+     "actual": 118809,
+     "learned": 107753.8
+    },
+    {
+     "part": "selection",
+     "month": "2024-06",
+     "cutoff": "2024-04",
+     "actual": 127274,
+     "learned": 125232.5
+    },
+    {
+     "part": "selection",
+     "month": "2024-08",
+     "cutoff": "2024-06",
+     "actual": 119895,
+     "learned": 121001.8
+    },
+    {
+     "part": "selection",
+     "month": "2024-09",
+     "cutoff": "2024-07",
+     "actual": 115280,
+     "learned": 121241.5
+    },
+    {
+     "part": "selection",
+     "month": "2024-10",
+     "cutoff": "2024-08",
+     "actual": 113908,
+     "learned": 112302.4
+    },
+    {
+     "part": "selection",
+     "month": "2024-11",
+     "cutoff": "2024-09",
+     "actual": 125164,
+     "learned": 118212.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-12",
+     "cutoff": "2024-10",
+     "actual": 134175,
+     "learned": 126161.4
+    },
+    {
+     "part": "selection",
+     "month": "2025-01",
+     "cutoff": "2024-11",
+     "actual": 124651,
+     "learned": 125020
+    },
+    {
+     "part": "selection",
+     "month": "2025-02",
+     "cutoff": "2024-12",
+     "actual": 110248,
+     "learned": 123390.4
+    },
+    {
+     "part": "selection",
+     "month": "2025-03",
+     "cutoff": "2025-01",
+     "actual": 126739,
+     "learned": 123832.5
+    },
+    {
+     "part": "selection",
+     "month": "2025-04",
+     "cutoff": "2025-02",
+     "actual": 116279,
+     "learned": 118048.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-06",
+     "cutoff": "2025-04",
+     "actual": 121021,
+     "learned": 123143.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-07",
+     "cutoff": "2025-05",
+     "actual": 113912,
+     "learned": 123910.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-08",
+     "cutoff": "2025-06",
+     "actual": 116794,
+     "learned": 119121.4
+    },
+    {
+     "part": "selection",
+     "month": "2025-09",
+     "cutoff": "2025-07",
+     "actual": 104237,
+     "learned": 116322.3
+    },
+    {
+     "part": "selection",
+     "month": "2025-10",
+     "cutoff": "2025-08",
+     "actual": 109349,
+     "learned": 108615
+    },
+    {
+     "part": "selection",
+     "month": "2025-11",
+     "cutoff": "2025-09",
+     "actual": 128354,
+     "learned": 117038.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-12",
+     "cutoff": "2025-10",
+     "actual": 119639,
+     "learned": 128419.2
+    },
+    {
+     "part": "later",
+     "month": "2026-02",
+     "cutoff": "2025-12",
+     "actual": 119436,
+     "learned": 117590.9
+    },
+    {
+     "part": "later",
+     "month": "2026-03",
+     "cutoff": "2026-01",
+     "actual": 128404,
+     "learned": 123385.6
+    },
+    {
+     "part": "later",
+     "month": "2026-04",
+     "cutoff": "2026-02",
+     "actual": 115625,
+     "learned": 117531.7
+    },
+    {
+     "part": "later",
+     "month": "2026-05",
+     "cutoff": "2026-03",
+     "actual": 131920,
+     "learned": 121127.1
+    },
+    {
+     "part": "later",
+     "month": "2026-06",
+     "cutoff": "2026-04",
+     "actual": 125937,
+     "learned": 121929.3
+    },
+    {
+     "part": "later",
+     "month": "2026-07",
+     "cutoff": "2026-05",
+     "actual": 113641,
+     "learned": 119663.8
+    },
+    {
+     "part": "later",
+     "month": "2026-08",
+     "cutoff": "2026-06",
+     "actual": 107771,
+     "learned": 122772.9
+    },
+    {
+     "part": "later",
+     "month": "2026-09",
+     "cutoff": "2026-07",
+     "actual": 107712,
+     "learned": 112162.1
+    }
+   ]
+  },
+  {
+   "origin": "PNQ",
+   "destination": "DEL",
+   "baseSelectedPolicy": "seasonal-auto-ets",
+   "reproducedBasePolicy": "seasonal-auto-ets",
+   "selectedPolicy": "seasonal-auto-ets",
+   "plannerPolicy": "last-year",
+   "minMaePolicy": "seasonal-auto-ets",
+   "selection": {
+    "count": 21,
+    "mae": {
+     "last-observed": 5910.5,
+     "last-year": 5688.2,
+     "ses-optimized": 5539,
+     "seasonal-auto-ets": 5302.1,
+     "learned-seasonal": 6419.9
+    }
+   },
+   "later": {
+    "count": 8,
+    "mae": {
+     "last-observed": 8549.6,
+     "last-year": 6873.3,
+     "ses-optimized": 9210.3,
+     "seasonal-auto-ets": 10802.6,
+     "learned-seasonal": 6176.7
+    }
+   },
+   "rows": [
+    {
+     "part": "selection",
+     "month": "2024-01",
+     "cutoff": "2023-11",
+     "actual": 113497,
+     "learned": 129774.4
+    },
+    {
+     "part": "selection",
+     "month": "2024-02",
+     "cutoff": "2023-12",
+     "actual": 116998,
+     "learned": 124652.3
+    },
+    {
+     "part": "selection",
+     "month": "2024-03",
+     "cutoff": "2024-01",
+     "actual": 123334,
+     "learned": 116445.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-04",
+     "cutoff": "2024-02",
+     "actual": 123871,
+     "learned": 116918.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-06",
+     "cutoff": "2024-04",
+     "actual": 112743,
+     "learned": 115512.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-08",
+     "cutoff": "2024-06",
+     "actual": 118496,
+     "learned": 124240.4
+    },
+    {
+     "part": "selection",
+     "month": "2024-09",
+     "cutoff": "2024-07",
+     "actual": 118046,
+     "learned": 117478.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-10",
+     "cutoff": "2024-08",
+     "actual": 129527,
+     "learned": 122906.3
+    },
+    {
+     "part": "selection",
+     "month": "2024-11",
+     "cutoff": "2024-09",
+     "actual": 123018,
+     "learned": 115793.6
+    },
+    {
+     "part": "selection",
+     "month": "2024-12",
+     "cutoff": "2024-10",
+     "actual": 125760,
+     "learned": 122353.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-01",
+     "cutoff": "2024-11",
+     "actual": 124066,
+     "learned": 127701.2
+    },
+    {
+     "part": "selection",
+     "month": "2025-02",
+     "cutoff": "2024-12",
+     "actual": 112173,
+     "learned": 127867.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-03",
+     "cutoff": "2025-01",
+     "actual": 122769,
+     "learned": 124327.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-04",
+     "cutoff": "2025-02",
+     "actual": 118349,
+     "learned": 124092.2
+    },
+    {
+     "part": "selection",
+     "month": "2025-06",
+     "cutoff": "2025-04",
+     "actual": 113486,
+     "learned": 110895.5
+    },
+    {
+     "part": "selection",
+     "month": "2025-07",
+     "cutoff": "2025-05",
+     "actual": 104653,
+     "learned": 114337.2
+    },
+    {
+     "part": "selection",
+     "month": "2025-08",
+     "cutoff": "2025-06",
+     "actual": 112133,
+     "learned": 121236
+    },
+    {
+     "part": "selection",
+     "month": "2025-09",
+     "cutoff": "2025-07",
+     "actual": 111611,
+     "learned": 118097.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-10",
+     "cutoff": "2025-08",
+     "actual": 120550,
+     "learned": 119244.8
+    },
+    {
+     "part": "selection",
+     "month": "2025-11",
+     "cutoff": "2025-09",
+     "actual": 123164,
+     "learned": 113797.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-12",
+     "cutoff": "2025-10",
+     "actual": 114344,
+     "learned": 119888.4
+    },
+    {
+     "part": "later",
+     "month": "2026-02",
+     "cutoff": "2025-12",
+     "actual": 126097,
+     "learned": 118266.9
+    },
+    {
+     "part": "later",
+     "month": "2026-03",
+     "cutoff": "2026-01",
+     "actual": 127288,
+     "learned": 119977.7
+    },
+    {
+     "part": "later",
+     "month": "2026-04",
+     "cutoff": "2026-02",
+     "actual": 125007,
+     "learned": 120669.9
+    },
+    {
+     "part": "later",
+     "month": "2026-05",
+     "cutoff": "2026-03",
+     "actual": 129822,
+     "learned": 117536.7
+    },
+    {
+     "part": "later",
+     "month": "2026-06",
+     "cutoff": "2026-04",
+     "actual": 107782,
+     "learned": 114027.6
+    },
+    {
+     "part": "later",
+     "month": "2026-07",
+     "cutoff": "2026-05",
+     "actual": 105838,
+     "learned": 110201.6
+    },
+    {
+     "part": "later",
+     "month": "2026-08",
+     "cutoff": "2026-06",
+     "actual": 112775,
+     "learned": 114168.8
+    },
+    {
+     "part": "later",
+     "month": "2026-09",
+     "cutoff": "2026-07",
+     "actual": 106901,
+     "learned": 112548.6
+    }
+   ]
+  },
+  {
+   "origin": "BLR",
+   "destination": "DEL",
+   "baseSelectedPolicy": "ses-optimized",
+   "reproducedBasePolicy": "ses-optimized",
+   "selectedPolicy": "ses-optimized",
+   "plannerPolicy": "last-year",
+   "minMaePolicy": "ses-optimized",
+   "selection": {
+    "count": 21,
+    "mae": {
+     "last-observed": 8714.1,
+     "last-year": 8781.1,
+     "ses-optimized": 8276.2,
+     "seasonal-auto-ets": 9135.3,
+     "learned-seasonal": 8597.6
+    }
+   },
+   "later": {
+    "count": 8,
+    "mae": {
+     "last-observed": 15487.4,
+     "last-year": 18944.5,
+     "ses-optimized": 15942.1,
+     "seasonal-auto-ets": 16389,
+     "learned-seasonal": 16704.5
+    }
+   },
+   "rows": [
+    {
+     "part": "selection",
+     "month": "2024-01",
+     "cutoff": "2023-11",
+     "actual": 202724,
+     "learned": 210053.5
+    },
+    {
+     "part": "selection",
+     "month": "2024-02",
+     "cutoff": "2023-12",
+     "actual": 201616,
+     "learned": 196077.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-03",
+     "cutoff": "2024-01",
+     "actual": 206370,
+     "learned": 192949.7
+    },
+    {
+     "part": "selection",
+     "month": "2024-04",
+     "cutoff": "2024-02",
+     "actual": 202807,
+     "learned": 202673.6
+    },
+    {
+     "part": "selection",
+     "month": "2024-06",
+     "cutoff": "2024-04",
+     "actual": 187355,
+     "learned": 200750.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-08",
+     "cutoff": "2024-06",
+     "actual": 197396,
+     "learned": 218064.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-09",
+     "cutoff": "2024-07",
+     "actual": 195132,
+     "learned": 199230.7
+    },
+    {
+     "part": "selection",
+     "month": "2024-10",
+     "cutoff": "2024-08",
+     "actual": 210278,
+     "learned": 210059.4
+    },
+    {
+     "part": "selection",
+     "month": "2024-11",
+     "cutoff": "2024-09",
+     "actual": 188317,
+     "learned": 195112.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-12",
+     "cutoff": "2024-10",
+     "actual": 194427,
+     "learned": 207583
+    },
+    {
+     "part": "selection",
+     "month": "2025-01",
+     "cutoff": "2024-11",
+     "actual": 194935,
+     "learned": 207970.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-02",
+     "cutoff": "2024-12",
+     "actual": 182478,
+     "learned": 189884.4
+    },
+    {
+     "part": "selection",
+     "month": "2025-03",
+     "cutoff": "2025-01",
+     "actual": 185461,
+     "learned": 185014.9
+    },
+    {
+     "part": "selection",
+     "month": "2025-04",
+     "cutoff": "2025-02",
+     "actual": 186608,
+     "learned": 183518.2
+    },
+    {
+     "part": "selection",
+     "month": "2025-06",
+     "cutoff": "2025-04",
+     "actual": 189828,
+     "learned": 173259.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-07",
+     "cutoff": "2025-05",
+     "actual": 192671,
+     "learned": 182249.9
+    },
+    {
+     "part": "selection",
+     "month": "2025-08",
+     "cutoff": "2025-06",
+     "actual": 196656,
+     "learned": 194005.5
+    },
+    {
+     "part": "selection",
+     "month": "2025-09",
+     "cutoff": "2025-07",
+     "actual": 195924,
+     "learned": 190055
+    },
+    {
+     "part": "selection",
+     "month": "2025-10",
+     "cutoff": "2025-08",
+     "actual": 189596,
+     "learned": 208123.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-11",
+     "cutoff": "2025-09",
+     "actual": 212038,
+     "learned": 195007.4
+    },
+    {
+     "part": "selection",
+     "month": "2025-12",
+     "cutoff": "2025-10",
+     "actual": 202828,
+     "learned": 202076.9
+    },
+    {
+     "part": "later",
+     "month": "2026-02",
+     "cutoff": "2025-12",
+     "actual": 223588,
+     "learned": 194573.1
+    },
+    {
+     "part": "later",
+     "month": "2026-03",
+     "cutoff": "2026-01",
+     "actual": 212538,
+     "learned": 197292.7
+    },
+    {
+     "part": "later",
+     "month": "2026-04",
+     "cutoff": "2026-02",
+     "actual": 224585,
+     "learned": 200079.1
+    },
+    {
+     "part": "later",
+     "month": "2026-05",
+     "cutoff": "2026-03",
+     "actual": 201571,
+     "learned": 195857.4
+    },
+    {
+     "part": "later",
+     "month": "2026-06",
+     "cutoff": "2026-04",
+     "actual": 179451,
+     "learned": 204324.3
+    },
+    {
+     "part": "later",
+     "month": "2026-07",
+     "cutoff": "2026-05",
+     "actual": 189511,
+     "learned": 209277.3
+    },
+    {
+     "part": "later",
+     "month": "2026-08",
+     "cutoff": "2026-06",
+     "actual": 201246,
+     "learned": 211088
+    },
+    {
+     "part": "later",
+     "month": "2026-09",
+     "cutoff": "2026-07",
+     "actual": 196410,
+     "learned": 191734.9
+    }
+   ]
+  },
+  {
+   "origin": "DEL",
+   "destination": "BLR",
+   "baseSelectedPolicy": "last-year",
+   "reproducedBasePolicy": "last-year",
+   "selectedPolicy": "learned-seasonal",
+   "plannerPolicy": "learned-seasonal",
+   "minMaePolicy": "learned-seasonal",
+   "selection": {
+    "count": 21,
+    "mae": {
+     "last-observed": 15548.3,
+     "last-year": 11935.2,
+     "ses-optimized": 13752.7,
+     "seasonal-auto-ets": 13992.5,
+     "learned-seasonal": 8502.4
+    }
+   },
+   "later": {
+    "count": 8,
+    "mae": {
+     "last-observed": 13725.3,
+     "last-year": 18138.4,
+     "ses-optimized": 12813.3,
+     "seasonal-auto-ets": 13423.5,
+     "learned-seasonal": 11678.8
+    }
+   },
+   "rows": [
+    {
+     "part": "selection",
+     "month": "2024-01",
+     "cutoff": "2023-11",
+     "actual": 201415,
+     "learned": 208329.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-02",
+     "cutoff": "2023-12",
+     "actual": 195258,
+     "learned": 195027
+    },
+    {
+     "part": "selection",
+     "month": "2024-03",
+     "cutoff": "2024-01",
+     "actual": 197494,
+     "learned": 194955.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-04",
+     "cutoff": "2024-02",
+     "actual": 197812,
+     "learned": 193514
+    },
+    {
+     "part": "selection",
+     "month": "2024-06",
+     "cutoff": "2024-04",
+     "actual": 201380,
+     "learned": 204792.2
+    },
+    {
+     "part": "selection",
+     "month": "2024-08",
+     "cutoff": "2024-06",
+     "actual": 195261,
+     "learned": 212691
+    },
+    {
+     "part": "selection",
+     "month": "2024-09",
+     "cutoff": "2024-07",
+     "actual": 188636,
+     "learned": 196001.1
+    },
+    {
+     "part": "selection",
+     "month": "2024-10",
+     "cutoff": "2024-08",
+     "actual": 174119,
+     "learned": 194002.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-11",
+     "cutoff": "2024-09",
+     "actual": 209474,
+     "learned": 201697.9
+    },
+    {
+     "part": "selection",
+     "month": "2024-12",
+     "cutoff": "2024-10",
+     "actual": 202492,
+     "learned": 217918.6
+    },
+    {
+     "part": "selection",
+     "month": "2025-01",
+     "cutoff": "2024-11",
+     "actual": 192619,
+     "learned": 205233.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-02",
+     "cutoff": "2024-12",
+     "actual": 179446,
+     "learned": 181181.6
+    },
+    {
+     "part": "selection",
+     "month": "2025-03",
+     "cutoff": "2025-01",
+     "actual": 189358,
+     "learned": 183935.9
+    },
+    {
+     "part": "selection",
+     "month": "2025-04",
+     "cutoff": "2025-02",
+     "actual": 182024,
+     "learned": 178582
+    },
+    {
+     "part": "selection",
+     "month": "2025-06",
+     "cutoff": "2025-04",
+     "actual": 188456,
+     "learned": 186879
+    },
+    {
+     "part": "selection",
+     "month": "2025-07",
+     "cutoff": "2025-05",
+     "actual": 188732,
+     "learned": 191693.6
+    },
+    {
+     "part": "selection",
+     "month": "2025-08",
+     "cutoff": "2025-06",
+     "actual": 191087,
+     "learned": 187490.3
+    },
+    {
+     "part": "selection",
+     "month": "2025-09",
+     "cutoff": "2025-07",
+     "actual": 167605,
+     "learned": 177839.1
+    },
+    {
+     "part": "selection",
+     "month": "2025-10",
+     "cutoff": "2025-08",
+     "actual": 184679,
+     "learned": 179442.5
+    },
+    {
+     "part": "selection",
+     "month": "2025-11",
+     "cutoff": "2025-09",
+     "actual": 232061,
+     "learned": 193929.7
+    },
+    {
+     "part": "selection",
+     "month": "2025-12",
+     "cutoff": "2025-10",
+     "actual": 218748,
+     "learned": 210426.3
+    },
+    {
+     "part": "later",
+     "month": "2026-02",
+     "cutoff": "2025-12",
+     "actual": 204012,
+     "learned": 192241.5
+    },
+    {
+     "part": "later",
+     "month": "2026-03",
+     "cutoff": "2026-01",
+     "actual": 207345,
+     "learned": 197763.5
+    },
+    {
+     "part": "later",
+     "month": "2026-04",
+     "cutoff": "2026-02",
+     "actual": 199794,
+     "learned": 195345.3
+    },
+    {
+     "part": "later",
+     "month": "2026-05",
+     "cutoff": "2026-03",
+     "actual": 238750,
+     "learned": 213882.8
+    },
+    {
+     "part": "later",
+     "month": "2026-06",
+     "cutoff": "2026-04",
+     "actual": 195894,
+     "learned": 201936.2
+    },
+    {
+     "part": "later",
+     "month": "2026-07",
+     "cutoff": "2026-05",
+     "actual": 192916,
+     "learned": 207161.3
+    },
+    {
+     "part": "later",
+     "month": "2026-08",
+     "cutoff": "2026-06",
+     "actual": 188577,
+     "learned": 200586.6
+    },
+    {
+     "part": "later",
+     "month": "2026-09",
+     "cutoff": "2026-07",
+     "actual": 193923,
+     "learned": 183458
+    }
+   ]
+  }
+ ],
+ "summary": {
+  "routes": 6,
+  "selectedBeatsLastObserved": 4,
+  "baseSelectedBeatsLastObserved": 2,
+  "plannerRuleBeatsLastObserved": 5,
+  "minMaeRuleBeatsLastObserved": 3,
+  "learnedSelected": 3,
+  "learnedBeatsLastObservedLater": 5,
+  "learnedBestLater": 4
+ }
+}
