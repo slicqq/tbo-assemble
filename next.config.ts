@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Local e2e runs use 127.0.0.1 and cloud previews proxy through *.e2b.app; without this,
+  // Next 16 blocks dev-only resources (HMR) for those origins and the client never hydrates.
+  allowedDevOrigins: ["127.0.0.1", "*.e2b.app"],
   serverExternalPackages: ["tesseract.js", "tesseract.js-core"],
   async headers() {
     const noStore = [
