@@ -60,7 +60,7 @@ export type ServiceSummary = {
 };
 export type RiskOptimizedPlan = {
   rows: PlanRow[]; objective: number; upperBound: number; gap: number; baselineObjective: number;
-  /** 'risk-cvar-decomposition' is used above LARGE_PORTFOLIO_THRESHOLD products (or when `solver` asks for it). */
+  /** 'risk-cvar-decomposition' is the default; 'risk-cvar-local-search' when `solver: 'local-search'` is requested. */
   algorithm: 'risk-cvar-local-search' | 'risk-cvar-decomposition'; bucketCount: number; engine: typeof RISK_ENGINE_VERSION; risk: RiskSummary;
   /** 'joint': selling prices are chosen together with quantities and covered by the upper bound. */
   pricing: 'joint' | 'fixed'; service: ServiceSummary;
@@ -636,7 +636,7 @@ type Solved = { state: State; models: Model[]; optionModels: Model[][]; pricesFi
  * `fixedPrices` holds selling prices (the availability search keeps the no-target prices, so a target
  * is met by buying more cover for the same demand, not by discounting to create extra demand).
  */
-function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash', large = items.length > LARGE_PORTFOLIO_THRESHOLD): Solved {
+function solvePortfolio(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash', large = true): Solved {
   if (large) {
     const solved = solveLarge(items, set, budget, risk, k, asOf, mu, jointPricing, thorough, fixedPrices, warm, basis);
     return { ...solved, state: withinBudget(solved.models, solved.state, budget, risk, k) };
@@ -694,11 +694,8 @@ function withinBudget(models: Model[], state: State, budget: number, risk: numbe
 // ---------------------------------------------------------------------------------------------
 // Large portfolios: scenario-weight decomposition
 // ---------------------------------------------------------------------------------------------
-/**
- * Above this many products the planner uses the decomposition solver below. The local search above is
- * O(n²·S) per pass (≈0.9 s at 20 products, 9 s at 40, 23 s at 80), so it cannot plan TBO-sized portfolios.
- */
-export const LARGE_PORTFOLIO_THRESHOLD = 30;
+// The decomposition solver below is the default for every portfolio size. The local search above (solver:
+// 'local-search') is O(n²·S) per pass (≈0.9 s at 20 products, 9 s at 40, 23 s at 80), so it suits small portfolios only.
 
 /**
  * CVaR is a minimum over scenario weightings ω (ω_s = (1−r)/S + r·ν_s, 0 ≤ ν_s ≤ 1/k, Σν = 1). For any such ω,
@@ -857,7 +854,11 @@ type LeanPlan = { q: Int32Array; a: Int32Array; option: Int32Array };
 function solveLarge(items: Opportunity[], set: ScenarioSet, budget: number, risk: number, k: number, asOf: string, mu: number, jointPricing: boolean, thorough: boolean, fixedPrices?: number[], warm?: State, basis: BudgetBasis = 'cash'): Solved {
   const n = items.length, S = set.count, B = Number.isFinite(budget) ? budget : Infinity;
   const pricesFixed = !jointPricing || fixedPrices !== undefined;
-  const products = items.map((item, i) => leanProduct(item, i, set, pricesFixed ? [fixedPrices?.[i] ?? Math.max(1, Math.round(item.referencePrice))] : candidatePrices(item), asOf, mu, basis));
+  // Fixed pricing without given prices: each product's stand-alone price (as in the local search) up to 200 products,
+  // the reference price above (the stand-alone search costs O(13·31·S) per product).
+  const standAlone = (): number[] => items.map((item, i) => (n <= 200 ? choosePrice(item, i, set, risk, k, asOf, budget, mu, basis) : Math.max(1, Math.round(item.referencePrice))));
+  const fixed = pricesFixed ? (fixedPrices ?? standAlone()) : null;
+  const products = items.map((item, i) => leanProduct(item, i, set, fixed ? [fixed[i]] : candidatePrices(item), asOf, mu, basis));
   const reference = products.map(p => Math.max(0, p.prices.indexOf(p.refPrice)));
   const scratch = leanScratch(S, Math.max(1, ...products.map(p => p.C)));
   const modelCache = new Map<number, Model>();
@@ -980,6 +981,13 @@ function solveLarge(items: Opportunity[], set: ScenarioSet, budget: number, risk
     return P;
   };
   if (warm && warm.q.length === n) consider({ q: Int32Array.from(warm.q), a: Int32Array.from(warm.a), option: Int32Array.from(reference) });
+  if (!pricesFixed && thorough && n <= 30) {
+    // Small portfolios: seed with the fixed-price plan (stand-alone prices), so joint pricing never does worse than
+    // fixed pricing. Larger portfolios skip it: joint pricing wins there by a wide margin and the extra solve costs time.
+    const seed = solveLarge(items, set, budget, risk, k, asOf, mu, false, true, undefined, warm, basis);
+    const option = Int32Array.from(seed.models, (m, i) => Math.max(0, products[i].prices.indexOf(m.price)));
+    if (seed.models.every((m, i) => products[i].prices[option[i]] === m.price)) consider({ q: Int32Array.from(seed.state.q), a: Int32Array.from(seed.state.a), option });
+  }
   // Checkpoints: the bound at the best plan's own CVaR weighting is the tight one; stop once the certified gap is small.
   const iterations = thorough ? 16 : 6, checkpoints = new Set(thorough ? [4, 8, 12] : [3]);
   const certify = () => { if (best.P) bound = Math.min(bound, boundAndActive(tailWeights(best.P, risk, k), lambda, true).bound); return bound - best.objective <= 5e-4 * Math.max(1, Math.abs(best.objective)); };
@@ -1004,7 +1012,61 @@ function solveLarge(items: Opportunity[], set: ScenarioSet, budget: number, risk
   let state = allocator.empty();
   for (let i = 0; i < n; i++) if (plan.q[i] > 0 || plan.a[i] > 0) allocator.set(state, i, plan.q[i], plan.a[i]);
   state = swapPolish(allocator, models, state, B, !thorough ? 1 : n > 200 ? 1 : 4);
+  if (!pricesFixed && thorough && n <= 100) {
+    // Up to 100 products: also try neighbouring prices with an exact re-optimisation of that product's units (larger
+    // portfolios gain about 0.01% from it, for about a second).
+    if (pricePolish(allocator, models, products, plan.option, modelOf, state)) state = swapPolish(allocator, models, state, B, 2);
+  }
+  // Empty-plan escape (as in the local search): no single product pays on its own, but a pair can through diversification.
+  if (n <= 60 && state.q.every(v => v === 0) && state.a.every(v => v === 0)) allocator.light(state);
+  // Few products: whole-unit effects matter more. While the plan is not yet certified within 0.05% of the bound,
+  // finish with the local search's full improvement pass (as the local search itself escalates).
+  const open = () => bound - state.objective > 5e-4 * Math.max(1, Math.abs(state.objective));
+  if (thorough && n <= 16 && open()) {
+    const maxCap = Math.max(1, ...models.map(m => m.cap));
+    state = allocator.improve(state, maxCap);
+    if (!pricesFixed && open()) {
+      // The local search's price pass: re-price one product, re-optimise its units and re-spend the budget it frees.
+      const optionModels = products.map((p, i) => p.choosable.map(o => modelOf(i, o)));
+      const priced = pricePass(state, models.slice(), optionModels, B, risk, k, 3);
+      if (priced.state.objective > state.objective + 1e-9 * Math.max(1, Math.abs(state.objective))) {
+        for (let i = 0; i < n; i++) models[i] = priced.models[i];
+        state = new Allocator(models, B, risk, k).improve(priced.state, maxCap);
+      }
+    }
+  }
   return { state, models, optionModels: models.map(m => [m]), pricesFixed, bound: Math.max(state.objective, bound + Math.max(1e-7, Math.abs(bound) * 1e-9)) };
+}
+
+/**
+ * Price polish: for each product (largest spend first) try the neighbouring prices on its grid; each trial re-prices
+ * the product, re-optimises its own units within the budget left (Allocator.scan) and is kept only if the true
+ * objective improves. Mutates `models` and `option` in place; returns whether anything changed.
+ */
+function pricePolish(allocator: Allocator, models: Model[], products: LeanProduct[], option: Int32Array, modelOf: (i: number, o: number) => Model, state: State): boolean {
+  let order = models.map((m, i) => i).sort((u, v) => capital(models[v], state.q[v], state.a[v]) - capital(models[u], state.q[u], state.a[u]));
+  let changed = false;
+  // Up to three rounds; later rounds revisit only the products whose price moved, so a price can walk along its grid.
+  for (let round = 0; round < 3 && order.length; round++) {
+    const moved: number[] = [];
+    for (const i of order) {
+      const p = products[i];
+      if (p.choosable.length < 2) continue;
+      const grid = p.choosable.slice().sort((u, v) => p.prices[u] - p.prices[v]), at = grid.indexOf(option[i]);
+      for (const o of [grid[at - 1], grid[at + 1], grid[at - 2], grid[at + 2]]) {
+        if (o === undefined || o === option[i]) continue;
+        const before = state.objective, oldModel = models[i], oldQ = state.q[i], oldA = state.a[i];
+        models[i] = modelOf(i, o);
+        allocator.rebase(state, i);
+        allocator.scan(state, i);
+        if (state.objective > before + 1e-7 * Math.max(1, Math.abs(before))) { option[i] = o; changed = true; if (moved.at(-1) !== i) moved.push(i); continue; }
+        models[i] = oldModel;
+        allocator.set(state, i, oldQ, oldA);
+      }
+    }
+    order = moved;
+  }
+  return changed;
 }
 
 /**
@@ -1062,8 +1124,15 @@ function swapPolish(allocator: Allocator, models: Model[], state: State, budget:
         if (!add || !remove) continue;
         const before = state.objective, gq = state.q[g.i], ga = state.a[g.i], lq = state.q[l.i], la = state.a[l.i];
         allocator.set(state, l.i, remove[0], remove[1]);
+        // Compound move: keep adding units of the gaining product while the freed budget allows (e.g. one expensive unit for two cheaper ones).
         let addedOk = false;
-        if (state.spent + capital(models[g.i], add[0], add[1]) - capital(models[g.i], gq, ga) <= budget) { allocator.set(state, g.i, add[0], add[1]); addedOk = true; }
+        for (let extra = 0; extra < 64; extra++) {
+          const next = up(state, g.i);
+          if (!next || state.spent + capital(models[g.i], next[0], next[1]) - capital(models[g.i], state.q[g.i], state.a[g.i]) > budget) break;
+          const previous = state.objective, pq = state.q[g.i], pa = state.a[g.i];
+          allocator.set(state, g.i, next[0], next[1]); addedOk = true;
+          if (extra > 0 && state.objective <= previous) { allocator.set(state, g.i, pq, pa); break; }
+        }
         if (addedOk && state.objective > before + 1e-7 * Math.max(1, Math.abs(before))) { accepted++; break; }
         if (addedOk) allocator.set(state, g.i, gq, ga);
         allocator.set(state, l.i, lq, la);
@@ -1183,7 +1252,7 @@ function evaluate(items: Opportunity[], decisions: Decision[], risk: number, set
  * Options of the risk engine. `scenarioOverrides` changes the simulated world (planning and evaluation
  * scenarios alike); the model-risk check uses it to score fixed decisions in worlds the plan did not assume.
  */
-export type RiskPlanOptions = PlanOptions & { legacyRows?: PlanRow[]; scenarioOverrides?: Partial<ScenarioAssumptions>; /** Default 'auto': local search up to LARGE_PORTFOLIO_THRESHOLD products, decomposition above. */ solver?: 'auto' | 'local-search' | 'decomposition' };
+export type RiskPlanOptions = PlanOptions & { legacyRows?: PlanRow[]; scenarioOverrides?: Partial<ScenarioAssumptions>; /** Default 'auto' = the decomposition solver; 'local-search' selects the earlier local search (small portfolios only). */ solver?: 'auto' | 'local-search' | 'decomposition' };
 
 function settings(options: RiskPlanOptions) {
   const asOf = options.asOf || new Date().toISOString().slice(0, 10);
@@ -1222,7 +1291,9 @@ export function optimizePortfolioRisk(items: Opportunity[], budget: number, risk
   const optSet = buildScenarioSet(items, o.scenarioCount, o.seed, o.overrides);
   const evalSet = buildScenarioSet(items, o.evaluationCount, o.seed + 7919, o.overrides);
   const k = Math.max(1, Math.ceil(o.alpha * o.scenarioCount));
-  const large = options.solver === 'decomposition' || (options.solver !== 'local-search' && items.length > LARGE_PORTFOLIO_THRESHOLD);
+  // Default: the decomposition (better plans and tighter certificates than the local search in every head-to-head test,
+  // and it scales); the local search stays available with solver: 'local-search'.
+  const large = options.solver !== 'local-search';
   const algorithm: RiskOptimizedPlan['algorithm'] = large ? 'risk-cvar-decomposition' : 'risk-cvar-local-search';
   const base = solvePortfolio(items, optSet, B, r, k, o.asOf, 0, jointPricing, true, undefined, undefined, o.basis, large);
   let chosen = base, maxAvailability: Decision[] | null = null;

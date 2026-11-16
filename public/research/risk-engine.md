@@ -36,7 +36,7 @@ The v4 grid planner (see [portfolio-optimizer.md](portfolio-optimizer.md)) score
    - **Supplier capacity:** the allotment capacity is capped at the product's capacity.
    - **Minimum order and fixed fee.**
    - **Quote expiry:** expired quotes cannot be bought.
-5. **Solver with a proof of quality.** The solver searches 500 scenarios with whole units:
+5. **Solver with a proof of quality.** Since Stage 4, the default is the scenario-weight decomposition described under *Large portfolios* below. The original local search, described here, remains available as `solver: "local-search"`. It searches 500 scenarios with whole units:
    - It uses a per-product quantity scan, removal-and-refill moves and two starting plans.
    - It then computes an upper bound on the best achievable objective: an exact per-product integer search inside a minimax dual, plus a Frank–Wolfe bound.
    - The reported gap is the chosen plan's distance below that bound. If the gap exceeds 0.5%, the search escalates automatically.
@@ -55,29 +55,40 @@ Settings: 8 synthetic products, ₹50 L maximum budget, review date 16 Nov 2026.
 
 | Risk setting r | Engine | Expected profit | CVaR₁₀% | P(loss) | Served |
 |---|---|---|---|---|---|
-| 0 | v5 | ₹22.94 L | ₹10.22 L | 0.5% | 88.7% |
-| 0 | v4 | ₹20.77 L | ₹7.51 L | 0.9% | 83.7% |
-| 0.35 (default) | v5 | ₹22.59 L | ₹12.26 L | 0.1% | 84.2% |
-| 0.35 (default) | v4 | ₹20.24 L | ₹10.81 L | 0.2% | 73.3% |
-| 0.8 | v5 | ₹21.22 L | ₹13.41 L | 0.0% | 77.0% |
-| 0.8 | v4 | ₹20.19 L | ₹10.91 L | 0.2% | 73.0% |
+| 0 | v5 | ₹17.10 L | ₹7.85 L | 0.5% | 76.5% |
+| 0 | v4 | ₹−0.88 L | ₹−14.55 L | 54.8% | 51.7% |
+| 0.35 (default) | v5 | ₹16.89 L | ₹9.23 L | 0.2% | 74.7% |
+| 0.35 (default) | v4 | ₹4.37 L | ₹−8.21 L | 24.6% | 50.1% |
+| 0.8 | v5 | ₹16.44 L | ₹9.83 L | 0.1% | 72.9% |
+| 0.8 | v4 | ₹4.56 L | ₹−7.98 L | 23.8% | 50.1% |
 
-At the default setting, v5 commits ₹39.0 L of capital at risk, against ₹42.5 L for v4. The plan is 434 pre-paid units plus 195 allotment units. The certified gap is below 0.01%: the plan is ₹45 below a proven upper bound of ₹19,76,714 on the objective. Planning takes about 0.2–0.7 s in the browser, compared with about 50 ms for v4.
+(November 2026: cash budget, data-driven price response, decomposition solver.) At the default setting, v5 commits ₹49.99 L of cash, against ₹42.5 L for v4: 467 pre-paid units plus 124 allotment units. The certified gap is 0.009%: the plan's objective is ₹129 below a proven upper bound of ₹15,01,188.
+
+Why v4 looks so much worse than in earlier versions of this table: v4 assumes a price elasticity of −1.2, so it marks every product up 10%. In the planning world, demand responds with each product's own elasticity (the Lerner-implied −3 to −3.5 for the demo; mark-ups lose demand twice as fast as discounts win it). There, those mark-ups lose most bookings, and v4's pre-paid units go unsold in about a quarter of seasons. This shows why the price response has to be estimated rather than assumed. It is not a test of v4 under its own assumptions. Planning takes about 0.2–0.7 s in the browser, compared with about 50 ms for v4.
 
 These numbers compare two methods **inside the same assumed world**. They show that v5 makes better decisions given these assumptions, not that the assumptions are right. The same scenario model is used for planning and scoring, although the scoring draws are separate.
 
 ## Additions: joint pricing, availability target, model-risk check, supplier priorities
 
-These were added on the same branch after the first v5 release. Settings for every number below: the 8 demo products, ₹50 L budget, r = 0.35, review date 16 Nov 2026, scored on the same 2,000 out-of-sample seasons.
+These were added on the same branch after the first v5 release. Unless stated otherwise, every number below uses the 8 demo products, a ₹50 L cash budget, r = 0.35 and review date 16 Nov 2026, scored on the same 2,000 out-of-sample seasons. The numbers were refreshed in November 2026 for the current engine (cash budget, data-driven price response, decomposition solver).
 
 ### Joint price and quantity search
 
-- **What changed.** v5 used to fix each product's selling price before allocating the budget. Now each product starts at its stand-alone best price, and the search can then move any product to another of its five candidate prices (±10% of the reference price, elasticity −1.2 as in v4). It re-optimises the quantities after each move and keeps only moves that improve the objective.
-- **Upper bound.** The proven upper bound now takes the best price, pre-paid quantity and allotment quantity for every product inside the minimax dual, so the certified gap still holds with prices chosen jointly. The Frank–Wolfe bound is used only when prices are fixed.
-- **Pair move.** A new move handles plans where no single product pays on its own but a diversified pair does: when the plan is empty, the search tries the smallest increment of every pair of products. It does nothing when the plan is not empty.
-- **Demo result.** Every product already picks the top of the ±10% band, with or without the joint search, so the demo numbers do not change. A wider band should only be used once real elasticities have been measured.
-- **Test.** On random tiny cases, every price and quantity combination was enumerated. The bound is never below the true joint optimum, and the plan is within 3% of it. The unit test runs 24 cases; a one-off run of 160 cases also passed.
-- **Switching it off.** `jointPricing: false` restores the earlier fixed-price search exactly: the demo output matched the committed engine byte for byte.
+- **What it does.** Each product starts at its stand-alone best price. The search can then move any product to another of its 13 candidate prices (the reference price ±15% in 2.5% steps) and re-optimises the units with it. Demand responds with each product's own elasticity (see *Pricing* under *Limitations*).
+- **Upper bound.** The proven upper bound takes the best price, pre-paid quantity and allotment quantity for every product, so the certified gap still holds with prices chosen jointly.
+- **Pair move.** A move handles plans where no single product pays on its own but a diversified pair does: when the plan is empty, the search tries the smallest increment of every pair of products. It does nothing when the plan is not empty.
+- **Demo results** (r = 0.35):
+
+| Budget | Gain over fixed prices | Prices chosen |
+|---|---|---|
+| ₹50 L | none | all at the reference price |
+| ₹30 L | +8.5% | 2.5–10% above reference |
+| ₹20 L | +18.4% | 7.5–15% above reference |
+
+  When the budget is tight, supply is scarce and a mark-up rations it to the most profitable demand. With enough budget, the reference prices are already best.
+- **Guarantee.** Up to 30 products, the joint search starts from the fixed-price plan, so it never returns a worse plan than fixed pricing. A unit test checks this at r = 0, 0.35 and 0.8.
+- **Test.** On 24 random tiny cases, every price and quantity combination was enumerated. The bound is never below the true joint optimum, and the plan is within 3% of it. The PS harness's D3 check adds 30 larger cases (see *Large portfolios*).
+- **Switching it off.** `jointPricing: false` keeps each product at its stand-alone price.
 
 ### Availability target ("serve at least X% of demand")
 
@@ -85,29 +96,34 @@ These were added on the same branch after the first v5 release. Settings for eve
 - **How it works.** Every unit sold gets an extra "service value" μ in the objective. The engine searches for the smallest μ that makes the optimal plan reach the target (doubling, then bisection), keeping the no-target selling prices: the target is met by buying more cover, not by discounting to create demand. This is a standard Lagrangian treatment. The objective stays concave, so the proven bound still applies to the service-augmented objective.
 - **What it reports.** μ is the implied value of one extra booking served. The panel also shows the expected profit and the worst-10% profit given up.
 - **When the target cannot be reached.** If budget or supplier capacity cannot reach the target, the plan is left unchanged and the panel shows roughly the most this budget can serve.
-- **Results:**
+- **Results** (cash budget basis):
 
-| Target | Status | Served (no target: 84.2%) | Capital at risk | Expected profit change | Worst-10% change | Implied value per extra booking |
-|---|---|---|---|---|---|---|
-| 85% | met | 85.6% | ₹39.9 L | +₹0.14 L | −₹0.32 L | ₹661 |
-| 90% | met | 90.7% | ₹44.5 L (505 pre-paid + 220 allotment units) | +₹0.20 L | −₹2.48 L | ₹5,159 |
-| 95% | out of reach | — (about 94.7% at most) | — | — | — | — |
+| Budget | Target | Status | Served | Cash committed | Expected profit change | Worst-10% change | Implied value per extra booking |
+|---|---|---|---|---|---|---|---|
+| ₹50 L | none | — | 74.7% | ₹49.99 L | — | — | — |
+| ₹50 L | 80%, 85%, 90% or 95% | out of reach | about 79.6% at most | — | — | — | — |
+| ₹70 L | none | — | 81.7% | ₹57.87 L | — | — | — |
+| ₹70 L | 85% | met | 85.7% | ₹62.30 L | +₹0.22 L | −₹1.17 L | ₹1,593 |
+| ₹70 L | 90% | met | 90.6% | ₹68.80 L (594 pre-paid + 220 allotment units) | −₹0.15 L | −₹3.87 L | ₹6,373 |
+| ₹70 L | 95% | out of reach | about 92.5% at most | — | — | — | — |
 
-Going from 84% to 91% availability costs almost no expected profit at this budget; the price is tail risk. At ₹20 L, a 90% target is out of reach (about 67% at most).
+At ₹50 L on the cash basis, the budget limits availability: about 80% is the most it can serve. At ₹70 L, the plan without a target stops at ₹57.87 L because extra units lower the risk-adjusted objective. Going from 82% to 91% availability then costs only ₹0.15 L of expected profit; the price is tail risk (₹3.87 L of worst-10% profit). The 85% target even raises expected profit slightly, because the no-target plan trades some expected profit for a better worst case.
 
 - **Consistency across the app.** The target travels with the plan rows, so the following all re-plan under the same target: budget comparison, stress re-plans, quote impact, landed cost, Trends what-if, the decision record and the planning API check.
-- **Run time.** Adding a target costs about 1–2 s per re-plan.
+- **Run time.** Adding a target costs about 0.2 s per re-plan on the demo.
 - **Limitation.** The target is checked on the 500 planning seasons. The out-of-sample share can differ by a few tenths of a percentage point.
 
 ### Model-risk check (mismatched worlds)
 
-**What it does.** Every plan is optimised under the assumptions in `RISK_ASSUMPTIONS`. The check (`src/lib/model-risk.ts`, on the stress-test page and via `modelRisk: true` in the API) keeps the decisions fixed and scores them in 9 worlds:
+**What it does.** Every plan is optimised under the assumptions in `RISK_ASSUMPTIONS`. The check (`src/lib/model-risk.ts`, on the stress-test page and via `modelRisk: true` in the API) keeps the decisions fixed and scores them in 11 worlds:
 - as planned;
 - demand 15% below forecast;
 - demand 15% above forecast;
 - selling prices 5% lower;
+- customers less price-sensitive (0.4× the assumed elasticity, about the −1.2 that v4 assumes);
+- customers more price-sensitive (1.5× the assumed elasticity);
 - cancellations ×1.5;
-- volatility ×1.5;
+- demand 1.5× more volatile;
 - destinations moving together (same-region correlation 0.80 and cross-region 0.40, instead of 0.50 and 0.15);
 - shocks 3× as likely;
 - several of these at once.
@@ -118,27 +134,31 @@ Going from 84% to 91% availability costs almost no expected profit at this budge
 
 | World | v5 result | v5 regret | v4 result | v4 regret |
 |---|---|---|---|---|
-| As planned | ₹18.97 L | ₹0.00 L | ₹16.94 L | ₹2.03 L |
-| Demand −15% | ₹15.04 L | ₹0.88 L | ₹13.66 L | ₹2.27 L |
-| Demand +15% | ₹21.41 L | ₹0.59 L | ₹18.71 L | ₹3.29 L |
-| Prices −5% | ₹15.59 L | ₹0.01 L | ₹13.98 L | ₹1.61 L |
-| Cancellations ×1.5 | ₹17.35 L | ₹0.14 L | ₹15.62 L | ₹1.88 L |
-| Volatility ×1.5 | ₹15.59 L | ₹0.40 L | ₹13.49 L | ₹2.51 L |
-| Destinations move together | ₹18.49 L | ₹0.01 L | ₹16.54 L | ₹1.97 L |
-| Shocks ×3 | ₹15.21 L | ₹0.31 L | ₹13.22 L | ₹2.29 L |
-| Several wrong at once | ₹9.87 L | ₹1.92 L | ₹8.30 L | ₹3.48 L |
+| As planned | ₹14.21 L | ₹0.00 L | ₹−0.03 L | ₹14.24 L |
+| Demand −15% | ₹11.84 L | ₹0.40 L | ₹−5.73 L | ₹17.97 L |
+| Demand +15% | ₹15.51 L | ₹0.18 L | ₹4.97 L | ₹10.72 L |
+| Prices −5% | ₹11.12 L | ₹0.01 L | ₹−2.08 L | ₹13.21 L |
+| Customers less price-sensitive | ₹14.21 L | ₹2.58 L | ₹13.91 L | ₹2.87 L |
+| Customers more price-sensitive | ₹14.21 L | ₹0.00 L | ₹−11.38 L | ₹25.59 L |
+| Cancellations ×1.5 | ₹13.16 L | ₹0.09 L | ₹−2.35 L | ₹15.60 L |
+| Volatility ×1.5 | ₹11.58 L | ₹0.46 L | ₹−2.73 L | ₹14.77 L |
+| Destinations move together | ₹13.98 L | ₹0.06 L | ₹−0.82 L | ₹14.85 L |
+| Shocks ×3 | ₹11.11 L | ₹0.36 L | ₹−3.42 L | ₹14.89 L |
+| Several wrong at once | ₹7.01 L | ₹1.44 L | ₹−8.74 L | ₹17.19 L |
 
-**Across risk settings.** v5 has the higher risk-adjusted result and the higher worst-10% profit in all 9 worlds at r = 0, 0.35 and 0.8. Its average regret is about 5× lower than v4's:
+**Across risk settings.** v5 has the higher risk-adjusted result and the higher worst-10% profit in all 11 worlds at r = 0, 0.35 and 0.8:
 
 | Risk setting r | v5 average regret | v4 average regret |
 |---|---|---|
-| 0 | ₹0.44 L | ₹2.67 L |
-| 0.35 | ₹0.48 L | ₹2.37 L |
-| 0.8 | ₹0.59 L | ₹3.37 L |
+| 0 | ₹0.53 L | ₹18.17 L |
+| 0.35 | ₹0.51 L | ₹14.72 L |
+| 0.8 | ₹0.68 L | ₹17.27 L |
 
-**What to watch.** The worst case for v5 is "several wrong at once": ₹9.87 L against ₹8.30 L for v4, with a worst-10% average of −₹0.28 L.
+**Read the v4 numbers carefully.** Most of v4's regret comes from one assumption. It prices as if demand had an elasticity of −1.2, so it marks every product up 10%. Where customers are as price-sensitive as the data suggest (−3 to −3.5 for the demo), those mark-ups lose bookings. In the world where customers really are about as price-insensitive as v4 assumes, v4 does far better (₹13.91 L), and v5 still edges it (₹14.21 L). That world is also v5's largest regret (₹2.58 L): it prices for elastic demand, so it leaves margin on the table when demand turns out to be inelastic.
 
-**Caveats.** The worlds are synthetic stress tests of the method, not forecasts. The check runs in about 3–4 s (9 re-optimisations).
+**What to watch.** The worst case for v5 is "several wrong at once": ₹7.01 L against ₹−8.74 L for v4, with a worst-10% average of ₹−1.37 L.
+
+**Caveats.** The worlds are synthetic stress tests of the method, not forecasts. The check runs in about 3–6 s (11 re-optimisations).
 
 ### Supplier-integration priorities
 
@@ -159,17 +179,16 @@ Going from 84% to 91% availability costs almost no expected profit at this budge
 - *Top up with free-sale*: the budget or risk stops further commitment.
 
 **Demo results:**
-- ₹13.2 L of booking value stays unserved across 8 products.
-- The top three are Dubai city hotels (22 room-nights expected, 55 in a strong season, ₹2.8 L), North Goa (20 / 66, ₹2.0 L) and Mumbai → Singapore (7 / 23 seats, ₹1.8 L).
-- All eight are "Top up with free-sale" because risk, not capacity, limits the plan.
-- At ₹20 L, the products whose allotments are full switch to "Extend allotment".
-- At ₹20 L, the v4 plan leaves both flight routes at zero units, so they show "Connect free-sale / API supply".
+- At ₹50 L, ₹22.9 L of booking value stays unserved across the 8 products.
+- The top three are Dubai city hotels (34 room-nights expected, 75 in a strong season, ₹4.0 L), Mumbai → Singapore (18 / 40 seats, ₹4.0 L) and Delhi → Dubai (21 / 48 seats, ₹3.9 L).
+- All eight are "Top up with free-sale", because the budget, not supplier capacity, limits the plan.
+- At ₹20 L, the v4 plan leaves both flight routes at zero units, so they show "Connect free-sale / API supply" (₹17.1 L and ₹15.6 L of booking value unserved).
 
 ## Large portfolios: decomposition solver and background planning
 
 TBO plans across thousands of hotel and flight products, so the planner has to scale well beyond a demo portfolio.
 
-**Why a second solver.** The local search above re-scores every product at every greedy step and moves budget between pairs of products. That is O(n²·S) per pass: 0.9 s at 20 products, 9 s at 40 and 23 s at 80. Above `LARGE_PORTFOLIO_THRESHOLD` (30 products), the planner switches to a decomposition solver (`solveLarge` in `src/lib/risk-optimizer.ts`).
+**Why a second solver.** The local search above re-scores every product at every greedy step and moves budget between pairs of products. That is O(n²·S) per pass: 0.9 s at 20 products, 9 s at 40 and 23 s at 80. The decomposition solver (`solveLarge` in `src/lib/risk-optimizer.ts`) scales. It also found better plans in all 15 head-to-head cases below, so it is now the default for every portfolio size.
 
 **How it works.** CVaR is the minimum, over scenario weightings ω, of the ω-weighted expected profit. Each weighting gives a season (1 − r)/S, plus up to r/k extra for the worst seasons. So, for any fixed ω, the problem splits by product once the budget is priced with a multiplier λ:
 
@@ -179,7 +198,10 @@ Each product's maximum is found exactly on two one-dimensional concave curves: o
 
 1. **Bisect λ** so that the plan spends the budget. Each product picks its price together with λ. (Choosing prices separately oscillates: higher prices need fewer units, which lowers λ, which favours lower prices again.)
 2. **Update the weights.** It averages the CVaR weighting of each new plan into ω (fictitious play).
-3. **Keep the best plan.** It keeps the plan with the best true objective, then improves it with budget-neutral unit swaps between products.
+3. **Keep the best plan.** It keeps the plan with the best true objective, then improves it in up to three ways:
+   - **Unit swaps:** budget-neutral swaps between products, including compound moves such as one expensive unit for two cheaper ones.
+   - **Price polish (up to 100 products):** neighbouring prices, each with an exact re-optimisation of that product's units. A price can walk up to three rounds along its grid.
+   - **Full pass (up to 16 products, only while the plan is not yet certified within 0.05%):** the local search's improvement pass and its price pass, which re-spends any budget a price change frees.
 
 **Proof of quality.** For any valid ω, the decomposition value is an upper bound on the best achievable objective (weak duality). So every run reports a certified gap, as the local search does. The bound uses the CVaR weighting of the chosen plan and covers every price the plan may use. Tests (`tests/risk-large.test.ts`) check four things:
 - the curves against the scenario profits for every price;
@@ -191,13 +213,24 @@ Each product's maximum is found exactly on two one-dimensional concave curves: o
 
 | Products | Time | Certified gap | Memory (RSS) |
 |---:|---:|---:|---:|
-| 20 | 0.13 s | 0.02% | ≈120 MB |
-| 200 | 1.1 s | 0.03% | 130 MB |
-| 500 | 1.7 s | 0.02% | 171 MB |
-| 1,000 | 3.6 s | 0.02% | 179 MB |
-| 2,000 | 6.7 s | 0.02% | 249 MB |
+| 20 | 0.3–0.6 s | 0.02% | ≈100 MB |
+| 200 | 1.3 s | 0.02% | 131 MB |
+| 500 | 1.8 s | 0.02% | 158 MB |
+| 1,000 | 3.7 s | 0.01% | 180 MB |
+| 2,000 | 7.2 s | 0.02% | 264 MB |
 
-**Head to head with the local search.** On the same scenarios, the decomposition's plan was as good or better in all six cases (the demo at r = 0, 0.35 and 0.8, and a 20-product portfolio at the same settings). Its certified gap was also tighter: 0.01–0.28% against 0.11–0.85%. At 40 products it found a better plan (objective ₹49.51 L vs ₹49.31 L) in 0.3 s instead of 9–14 s. Portfolios of up to 30 products still use the local search by default, so earlier results stay reproducible. `solver: "decomposition"` forces the new solver.
+Up to 30 products, the solver also runs a fixed-price pass first and starts from its answer. This is why 20 products takes longer per product than 200, and it guarantees that joint pricing never returns a worse plan than fixed pricing.
+
+**Head to head with the local search** (same scenarios; 15 cases: the demo at ₹50 L and ₹30 L, and synthetic portfolios of 12, 20 and 30 products, each at r = 0, 0.35 and 0.8):
+- **Plan quality:** the decomposition's plan was better in all 15 cases, by 0.04–2.3% on the objective.
+- **Certificates:** its certified gaps were tighter, 0.003–0.46% against 0.11–2.3%.
+- **Speed:** it was faster in all 15 cases. On the demo it took 0.15–0.3 s against 0.25–1.5 s; at 30 products, under 1.1 s against 4–10 s.
+- **Not always ahead.** On the public-data portfolio at ₹60 L, the local search's plan is 0.015% better. Both plans are certified within 0.02% of the bound, and the decomposition stops once it is within 0.05%. `solver: "local-search"` reproduces the earlier engine exactly.
+
+**Against the exact optimum:** 30 two-product instances (15–39 units each, some with allotments and minimum orders), solved exactly by enumerating every price, pre-paid and allotment choice. This is the PS harness's D3 check.
+- **Decomposition:** at most 0.84% below the optimum, 0.05% on average. The worst case is a move neither solver makes: start buying a product at a higher price while dropping units of the other.
+- **Local search:** at most 3.2% below, 0.17% on average.
+- **Bounds:** both solvers' upper bounds were valid in every case.
 
 **Background planning.** In the workspace, portfolios above 30 products are planned in a Web Worker (`src/lib/plan-worker.ts`, `src/lib/use-background-plan.ts`), so the page stays usable.
 - **Browser test (`qa` smoke, development build):** 1,000 products took 3.0–3.6 s. During planning, frames stayed under 100 ms.

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { opportunities, type Opportunity } from '../src/lib/procurement-core';
-import { optimizePortfolioRisk, riskModelInternals, LARGE_PORTFOLIO_THRESHOLD } from '../src/lib/risk-optimizer';
+import { optimizePortfolioRisk, riskModelInternals } from '../src/lib/risk-optimizer';
 import { buildScenarioSet } from '../src/lib/risk-scenarios';
 import { syntheticPortfolio, fullCapacityCost } from '../src/lib/synthetic-portfolio';
 
@@ -95,7 +95,7 @@ test('decomposition matches or beats the local search on the demo and a 20-produ
   }
 });
 
-test(`portfolios above ${LARGE_PORTFOLIO_THRESHOLD} products use the decomposition; 1,000 products plan within budget with a certified gap`, () => {
+test('the decomposition is the default solver; 1,000 products plan within budget with a certified gap', () => {
   const items = syntheticPortfolio(1000, 7), budget = Math.round(fullCapacityCost(items) * 0.35);
   const started = Date.now(), plan = optimizePortfolioRisk(items, budget, 0.35, { asOf }), seconds = (Date.now() - started) / 1000;
   assert.equal(plan.algorithm, 'risk-cvar-decomposition');

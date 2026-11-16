@@ -58,9 +58,9 @@ The model is refitted at every rolling origin using only data available then. It
 
 | Budget | What the plan does |
 |---|---|
-| ₹25 L | Spends the full budget and prices 2.5–7.5% above market. Supply is scarce, so a small mark-up rations it to the most profitable demand. |
-| ₹40 L | Spends ₹39.98 L, all at market prices: 465 prepaid and 188 allotment units, 81% of demand served, expected profit ₹13.3 L, CVaR10 ₹7.1 L, P(loss) 0.6%. |
-| ₹60 L | Stops at about ₹40.7 L. Beyond that, extra units lower the risk-adjusted objective, so the rest of the budget is left unspent. |
+| ₹25 L | Spends the full budget and prices 7 of the 8 products 2.5–7.5% above market. Supply is scarce, so a small mark-up rations it to the most profitable demand. |
+| ₹40 L | Spends ₹40.00 L, all at market prices: 469 prepaid and 180 allotment units, 80% of demand served, expected profit ₹13.3 L, CVaR10 ₹7.2 L, P(loss) 0.5%. |
+| ₹60 L | Stops at about ₹41.2 L. Beyond that, extra units lower the risk-adjusted objective, so the rest of the budget is left unspent. |
 
 ## Is the "80%" demand range honest?
 
